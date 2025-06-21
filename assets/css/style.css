@@ -91,6 +91,7 @@ main {
 .post-excerpt {
   color: #cbd5e1;
   line-height: 1.7;
+  word-break: break-all;
 }
 
 /* Single Post */
@@ -132,6 +133,7 @@ main {
 .post-content p {
   margin-bottom: 20px;
   line-height: 1.8;
+  word-break: break-all;
 }
 
 .post-content ul, .post-content ol {
