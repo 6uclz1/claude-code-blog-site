@@ -116,6 +116,7 @@ main {
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
   border: 1px solid #334155;
+  word-break: break-all;
 }
 
 .post-content h2 {
