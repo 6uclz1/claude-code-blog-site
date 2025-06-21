@@ -1,0 +1,7 @@
+feedparser==6.0.10
+requests==2.31.0
+beautifulsoup4==4.12.2
+python-dateutil==2.8.2
+google-generativeai==0.3.2
+lxml==4.9.3
+pytz==2023.3
