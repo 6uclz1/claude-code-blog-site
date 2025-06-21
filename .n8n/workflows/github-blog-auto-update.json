@@ -16,11 +16,13 @@
       ]
     },
     {
-      "parameters": {},
+      "parameters": {
+        "jsCode": "// 昨日の記事をフィルタリング\nvar yesterday = new Date();\nyesterday.setDate(yesterday.getDate() - 1);\nyesterday.setHours(0, 0, 0, 0);\n\nvar items = [];\nfor (var i = 0; i < $input.all().length; i++) {\n  var item = $input.all()[i].json;\n  var pubDate = new Date(item.pubDate);\n  \n  // 昨日の記事のみを含める\n  if (pubDate >= yesterday && pubDate < new Date()) {\n    items.push({\n      json: item\n    });\n  }\n}\n\nreturn items;"
+      },
       "id": "f2240cb8-8b05-4a8e-8323-6ca91055c907",
       "name": "Filter Yesterday's Articles",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         1160,
         -340
@@ -28,12 +30,12 @@
     },
     {
       "parameters": {
-        "functionCode": "// 元のRSSデータを保持しつつ、Gemini用のプロンプトを準備\nvar items = [];\n\nfor (var i = 0; i < $input.all().length; i++) {\n  var item = $input.all()[i].json;\n  \n  items.push({\n    json: {\n      // Gemini APIリクエスト用のデータ\n      title: item.title || '',\n      content: item.content || item.description || '',\n      link: item.link || '',\n      description: item.description || '',\n      // 元のデータを保持\n      originalData: {\n        title: item.title,\n        link: item.link,\n        description: item.description,\n        content: item.content,\n        pubDate: item.pubDate,\n        guid: item.guid\n      }\n    }\n  });\n}\n\nreturn items;"
+        "jsCode": "// 各記事のURLにアクセスして実際のコンテンツを取得\nconst axios = require('axios');\nconst cheerio = require('cheerio');\n\nconst items = [];\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const item = $input.all()[i].json;\n  \n  try {\n    // 記事のURLにアクセス\n    const response = await axios.get(item.link, {\n      timeout: 10000,\n      headers: {\n        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'\n      }\n    });\n    \n    // HTMLを解析してメインコンテンツを取得\n    const $ = cheerio.load(response.data);\n    \n    // 一般的なコンテンツセレクタを試す\n    let content = '';\n    const selectors = [\n      'article',\n      '.post-content',\n      '.entry-content',\n      '.content',\n      'main',\n      '.article-body',\n      '.post-body'\n    ];\n    \n    for (const selector of selectors) {\n      const element = $(selector);\n      if (element.length > 0 && element.text().trim().length > 100) {\n        content = element.text().trim();\n        break;\n      }\n    }\n    \n    // フォールバック: bodyからscriptやstyleを除去\n    if (!content) {\n      $('script, style, nav, header, footer, aside').remove();\n      content = $('body').text().trim();\n    }\n    \n    // 長すぎる場合は最初の2000文字に制限\n    if (content.length > 2000) {\n      content = content.substring(0, 2000) + '...';\n    }\n    \n    items.push({\n      json: {\n        title: item.title || '',\n        content: content || item.description || '',\n        link: item.link || '',\n        description: item.description || '',\n        originalData: {\n          title: item.title,\n          link: item.link,\n          description: item.description,\n          content: item.content,\n          pubDate: item.pubDate,\n          guid: item.guid\n        }\n      }\n    });\n    \n  } catch (error) {\n    // エラーの場合は元のデータを使用\n    items.push({\n      json: {\n        title: item.title || '',\n        content: item.content || item.description || '',\n        link: item.link || '',\n        description: item.description || '',\n        originalData: {\n          title: item.title,\n          link: item.link,\n          description: item.description,\n          content: item.content,\n          pubDate: item.pubDate,\n          guid: item.guid\n        }\n      }\n    });\n  }\n}\n\nreturn items;"
       },
       "id": "647bfc1f-8c31-41b8-a87c-3e2bcb99f168",
       "name": "Prepare for Gemini",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         1360,
         -340
