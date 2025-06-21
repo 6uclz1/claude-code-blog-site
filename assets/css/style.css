@@ -20,6 +20,7 @@ body {
 
 /* Header */
 header {
+  background-color: #0f172a;
   border-bottom: 1px solid #334155;
   position: sticky;
   top: 0;
@@ -95,6 +96,7 @@ main {
 /* Single Post */
 .post-header {
   text-align: center;
+  background-color: #0f172a;
   margin-bottom: 40px;
   padding-bottom: 20px;
   border-bottom: 1px solid #334155;
