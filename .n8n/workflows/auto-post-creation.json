@@ -1,0 +1,238 @@
+{
+  "name": "Auto Post Creation Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "hour": 9,
+              "minute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-1",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/repos/{{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }}/contents/_posts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "get-posts-list",
+      "name": "Get Existing Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-header-auth",
+          "name": "GitHub Header Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 今日の日付を取得\nconst today = new Date();\nconst year = today.getFullYear();\nconst month = String(today.getMonth() + 1).padStart(2, '0');\nconst day = String(today.getDate()).padStart(2, '0');\n\n// 今日の投稿があるかチェック\nconst todayPrefix = `${year}-${month}-${day}`;\nconst existingPosts = $input.all();\n\nconst hasTodayPost = existingPosts.some(item => \n  item.json.name && item.json.name.startsWith(todayPrefix)\n);\n\n// 記事のテンプレート\nconst postTemplates = [\n  {\n    title: \"今日の技術トレンド\",\n    content: `## 今日注目すべき技術トレンド\\n\\n現在のWeb開発における最新の動向について解説します。\\n\\n### 主要なポイント\\n\\n- モダンフレームワークの進化\\n- パフォーマンス最適化の新手法\\n- セキュリティベストプラクティス\\n\\n## まとめ\\n\\n技術の進歩は日々続いています。常に学習を続けることが重要です。`\n  },\n  {\n    title: \"開発者のための効率化ツール\",\n    content: `## 開発効率を向上させるツール紹介\\n\\n開発者の生産性を高めるための便利なツールをご紹介します。\\n\\n### おすすめツール\\n\\n- エディター拡張機能\\n- コマンドラインツール\\n- 自動化スクリプト\\n\\n## 使い方のコツ\\n\\nツールは使い方次第で効果が大きく変わります。適切な設定と運用が鍵となります。`\n  },\n  {\n    title: \"Webアクセシビリティの重要性\",\n    content: `## すべてのユーザーのためのWebアクセシビリティ\\n\\nWebサイトのアクセシビリティについて、その重要性と実装方法を解説します。\\n\\n### 基本原則\\n\\n- 知覚可能性（Perceivable）\\n- 操作可能性（Operable）\\n- 理解可能性（Understandable）\\n- 堅牢性（Robust）\\n\\n## 実装のポイント\\n\\nアクセシビリティは設計段階から考慮することが重要です。`\n  }\n];\n\nif (hasTodayPost) {\n  return [{\n    json: {\n      skip: true,\n      message: \"今日の投稿は既に存在します\",\n      date: todayPrefix\n    }\n  }];\n} else {\n  // ランダムにテンプレートを選択\n  const randomTemplate = postTemplates[Math.floor(Math.random() * postTemplates.length)];\n  \n  const fileName = `${todayPrefix}-${randomTemplate.title.toLowerCase().replace(/[\\s\\u3040-\\u309F\\u30A0-\\u30FF\\u4E00-\\u9FAF]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.md`;\n  \n  const frontMatter = `---\nlayout: post\ntitle: \"${randomTemplate.title}\"\ndate: ${year}-${month}-${day}\nexcerpt: \"${randomTemplate.content.split('\\n\\n')[1] || randomTemplate.content.substring(0, 150)}...\"\n---\n\n`;\n  \n  return [{\n    json: {\n      skip: false,\n      fileName: fileName,\n      content: frontMatter + randomTemplate.content,\n      title: randomTemplate.title,\n      date: todayPrefix\n    }\n  }];\n}"
+      },
+      "id": "check-and-generate",
+      "name": "Check & Generate Post",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"skip\"]}}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "should-create-post",
+      "name": "Should Create Post?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "https://api.github.com/repos/{{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }}/contents/_posts/{{ $json.fileName }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "自動投稿: {{ $json.title }}"
+            },
+            {
+              "name": "content",
+              "value": "={{ Buffer.from($json.content, 'utf8').toString('base64') }}"
+            },
+            {
+              "name": "branch",
+              "value": "main"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "create-post-file",
+      "name": "Create Post File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-header-auth",
+          "name": "GitHub Header Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/repos/{{ $json.GITHUB_OWNER }}/{{ $json.GITHUB_REPO }}/pages/builds",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "trigger-build",
+      "name": "Trigger GitHub Pages Build",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1340,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "github-header-auth",
+          "name": "GitHub Header Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log('投稿をスキップしました:', $json.message);\nreturn $input.all();"
+      },
+      "id": "log-skip",
+      "name": "Log Skip",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Daily Schedule": {
+      "main": [
+        [
+          {
+            "node": "Get Existing Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Posts": {
+      "main": [
+        [
+          {
+            "node": "Check & Generate Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check & Generate Post": {
+      "main": [
+        [
+          {
+            "node": "Should Create Post?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Create Post?": {
+      "main": [
+        [
+          {
+            "node": "Create Post File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Post File": {
+      "main": [
+        [
+          {
+            "node": "Trigger GitHub Pages Build",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "id": "auto-post-creation-workflow"
+}
