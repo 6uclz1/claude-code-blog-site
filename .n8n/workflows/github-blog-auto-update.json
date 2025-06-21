@@ -1,0 +1,272 @@
+{
+  "name": "Hatena RSS Blog Auto Update",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "hour": 8,
+              "minute": 0
+            }
+          ]
+        }
+      },
+      "id": "cron-daily-8am",
+      "name": "Daily 8:00 AM",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://b.hatena.ne.jp/Buchi_6uclz1/rss",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "rss-feed-reader",
+      "name": "Get Hatena RSS Feed",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 前日の記事をフィルタリング\nconst items = $input.all();\nconst yesterday = new Date();\nyesterday.setDate(yesterday.getDate() - 1);\nyesterday.setHours(0, 0, 0, 0);\n\nconst today = new Date();\ntoday.setHours(0, 0, 0, 0);\n\nconst filteredItems = items.filter(item => {\n  const pubDate = new Date(item.json.isoDate || item.json.pubDate);\n  \n  // 前日の0時から今日の0時未満の記事を取得\n  return pubDate >= yesterday && pubDate < today;\n});\n\nconsole.log(`Found ${filteredItems.length} articles from yesterday`);\n\nif (filteredItems.length === 0) {\n  return [{\n    json: {\n      skip: true,\n      message: \"昨日の記事が見つかりませんでした\"\n    }\n  }];\n}\n\nreturn filteredItems;"
+      },
+      "id": "filter-yesterday-articles",
+      "name": "Filter Yesterday's Articles",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"skip\"]}}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "check-articles-exist",
+      "name": "Articles Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$json[\"link\"]}}",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "timeout": 30000
+        }
+      },
+      "id": "fetch-article-content",
+      "name": "Fetch Article Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// HTMLから本文を抽出してクリーンアップ\nconst html = $json.data;\nconst title = $('title').first().text() || $json.title;\n\n// 一般的な本文要素を試行\nconst contentSelectors = [\n  'article',\n  '.entry-content',\n  '.post-content',\n  '.content',\n  '.main-content',\n  '[role=\"main\"]',\n  'main',\n  '.article-body',\n  '.post-body'\n];\n\nlet content = '';\nfor (const selector of contentSelectors) {\n  const element = $(selector).first();\n  if (element.length > 0) {\n    content = element.text();\n    break;\n  }\n}\n\n// フォールバック: body全体から抽出\nif (!content || content.length < 100) {\n  content = $('body').text();\n}\n\n// テキストをクリーンアップ\ncontent = content\n  .replace(/\\s+/g, ' ')\n  .replace(/\\n\\s*\\n/g, '\\n')\n  .trim();\n\n// 長すぎる場合は切り詰め (OpenAI APIの制限考慮)\nif (content.length > 3000) {\n  content = content.substring(0, 3000) + '...';\n}\n\nreturn [{\n  json: {\n    ...($json),\n    cleanTitle: title.trim(),\n    cleanContent: content,\n    originalUrl: $json.link\n  }\n}];"
+      },
+      "id": "extract-content",
+      "name": "Extract Article Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-3.5-turbo",
+        "options": {
+          "maxTokens": 500,
+          "temperature": 0.7
+        },
+        "prompt": "以下の記事を日本語で簡潔に要約してください。重要なポイントを3-5つの項目で整理し、読みやすくまとめてください。\\n\\nタイトル: {{$json[\"cleanTitle\"]}}\\nURL: {{$json[\"originalUrl\"]}}\\n\\n記事内容:\\n{{$json[\"cleanContent\"]}}\\n\\n要約:"
+      },
+      "id": "summarize-with-openai",
+      "name": "Summarize with OpenAI",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        200
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-api-key",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Markdown形式のブログ記事を生成\nconst now = new Date();\nconst year = now.getFullYear();\nconst month = String(now.getMonth() + 1).padStart(2, '0');\nconst day = String(now.getDate()).padStart(2, '0');\nconst hour = String(now.getHours()).padStart(2, '0');\nconst minute = String(now.getMinutes()).padStart(2, '0');\n\nconst dateString = `${year}-${month}-${day}`;\nconst isoString = now.toISOString();\n\n// タイトルをファイル名に適した形式に変換\nconst sanitizedTitle = $json.cleanTitle\n  .replace(/[\\s\\u3040-\\u309F\\u30A0-\\u30FF\\u4E00-\\u9FAF]+/g, '-')\n  .replace(/[^a-zA-Z0-9\\-]/g, '')\n  .replace(/-+/g, '-')\n  .replace(/^-|-$/g, '')\n  .toLowerCase();\n\nconst fileName = `${dateString}-hatena-summary-${sanitizedTitle}.md`;\n\n// 要約テキストを取得\nconst summary = $json.choices[0].message.content;\n\n// Markdownコンテンツを生成\nconst markdownContent = `---\nlayout: post\ntitle: \"${$json.cleanTitle}\"\ndate: ${dateString}\nexcerpt: \"はてなブックマークで注目された記事の要約です。\"\ncategories: [\"はてな要約\"]\ntags: [\"はてなブックマーク\", \"要約\", \"自動生成\"]\nsource_url: \"${$json.originalUrl}\"\n---\n\n## 記事情報\n\n- **元記事**: [${$json.cleanTitle}](${$json.originalUrl})\n- **要約日時**: ${year}年${month}月${day}日 ${hour}:${minute}\n- **情報源**: はてなブックマーク\n\n## 要約\n\n${summary}\n\n## 元記事リンク\n\n詳細については、[こちらの元記事](${$json.originalUrl})をご覧ください。\n\n---\n\n*この記事は、はてなブックマークのRSSフィードから自動生成された要約です。*\n`;\n\nreturn [{\n  json: {\n    fileName: fileName,\n    markdownContent: markdownContent,\n    title: $json.cleanTitle,\n    originalUrl: $json.originalUrl,\n    summary: summary\n  }\n}];"
+      },
+      "id": "generate-markdown",
+      "name": "Generate Markdown Post",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",\n        \"resource\": \"file\",\n        \"operation\": \"create\",\n        \"owner\": \"{{$json.GITHUB_OWNER || 'your-github-username'}}\",\n        \"repository\": \"{{$json.GITHUB_REPO || 'claude-code-blog-site'}}\",\n        \"filePath\": \"_posts/{{$json.fileName}}\",\n        \"fileContent\": \"{{$json.markdownContent}}\",\n        \"commitMessage\": \"自動投稿: {{$json.title}}\"\n      },\n      \"id\": \"create-github-file\",\n      \"name\": \"Create GitHub Post\",\n      \"type\": \"n8n-nodes-base.github\",\n      \"typeVersion\": 1,\n      \"position\": [\n        2000,\n        200\n      ],\n      \"credentials\": {\n        \"githubApi\": {\n          \"id\": \"github-api-token\",\n          \"name\": \"GitHub API Token\"\n        }\n      }\n    },\n    {\n      \"parameters\": {\n        \"method\": \"POST\",\n        \"url\": \"https://api.github.com/repos/{{$json.GITHUB_OWNER || 'your-github-username'}}/{{$json.GITHUB_REPO || 'claude-code-blog-site'}}/pages/builds\",\n        \"authentication\": \"genericCredentialType\",\n        \"genericAuthType\": \"httpHeaderAuth\",\n        \"options\": {\n          \"response\": {\n            \"response\": {\n              \"fullResponse\": true\n            }\n          }\n        }\n      },\n      \"id\": \"trigger-pages-build\",\n      \"name\": \"Trigger GitHub Pages Build\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4.1,\n      \"position\": [\n        2220,\n        200\n      ],\n      \"credentials\": {\n        \"httpHeaderAuth\": {\n          \"id\": \"github-header-auth\",\n          \"name\": \"GitHub Header Auth\"\n        }\n      }\n    },\n    {\n      \"parameters\": {\n        \"jsCode\": \"console.log('昨日の記事がないため、処理をスキップしました:', $json.message);\\nreturn $input.all();\"\n      },\n      \"id\": \"log-skip-message\",\n      \"name\": \"Log Skip Message\",\n      \"type\": \"n8n-nodes-base.code\",\n      \"typeVersion\": 2,\n      \"position\": [\n        1120,\n        400\n      ]\n    },\n    {\n      \"parameters\": {\n        \"jsCode\": \"// エラーハンドリングとログ出力\\nconst success = {\\n  processed: true,\\n  fileName: $json.fileName,\\n  title: $json.title,\\n  timestamp: new Date().toISOString(),\\n  message: 'ブログ記事が正常に作成されました'\\n};\\n\\nconsole.log('ブログ自動更新完了:', success);\\nreturn [{ json: success }];\"\n      },\n      \"id\": \"log-success\",\n      \"name\": \"Log Success\",\n      \"type\": \"n8n-nodes-base.code\",\n      \"typeVersion\": 2,\n      \"position\": [\n        2440,\n        200\n      ]\n    }\n  ],\n  \"connections\": {\n    \"Daily 8:00 AM\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Get Hatena RSS Feed\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Get Hatena RSS Feed\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Filter Yesterday's Articles\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Filter Yesterday's Articles\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Articles Found?\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Articles Found?\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Fetch Article Content\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ],\n        [\n          {\n            \"node\": \"Log Skip Message\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Fetch Article Content\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Extract Article Content\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Extract Article Content\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Summarize with OpenAI\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Summarize with OpenAI\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Generate Markdown Post\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Generate Markdown Post\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Create GitHub Post\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Create GitHub Post\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Trigger GitHub Pages Build\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Trigger GitHub Pages Build\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Log Success\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"active\": true,\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  },\n  \"versionId\": \"1\",\n  \"id\": \"hatena-rss-blog-auto-update\"\n}"
+      }
+    }
+  ],
+  "connections": {
+    "Daily 8:00 AM": {
+      "main": [
+        [
+          {
+            "node": "Get Hatena RSS Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Hatena RSS Feed": {
+      "main": [
+        [
+          {
+            "node": "Filter Yesterday's Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Yesterday's Articles": {
+      "main": [
+        [
+          {
+            "node": "Articles Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Articles Found?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Article Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Skip Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Article Content": {
+      "main": [
+        [
+          {
+            "node": "Extract Article Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Article Content": {
+      "main": [
+        [
+          {
+            "node": "Summarize with OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize with OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Generate Markdown Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Markdown Post": {
+      "main": [
+        [
+          {
+            "node": "Create GitHub Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create GitHub Post": {
+      "main": [
+        [
+          {
+            "node": "Trigger GitHub Pages Build",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger GitHub Pages Build": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "id": "hatena-rss-blog-auto-update"
+}
