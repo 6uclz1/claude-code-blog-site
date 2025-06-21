@@ -220,14 +220,12 @@ excerpt: "昨日のはてなブックマークから気になった記事をAI�
         if not entries:
             logger.warning("No entries found in RSS feed")
             return
-        
-        yesterday_entries = entries
 
         # # 昨日の記事をフィルタリング
-        # yesterday_entries = self.filter_yesterday_entries(entries)
-        # if not yesterday_entries:
-        #     logger.info("No entries from yesterday found")
-        #     return
+        yesterday_entries = self.filter_yesterday_entries(entries)
+        if not yesterday_entries:
+            logger.info("No entries from yesterday found")
+            return
         
         # 各記事を処理
         entries_summaries = []
