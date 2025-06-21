@@ -29,15 +29,15 @@ class HatenaBookmarkSummarizer:
         
         # Gemini API設定
         genai.configure(api_key=self.gemini_api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
-        
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
+
         # 日本時間のタイムゾーン
         self.jst = pytz.timezone('Asia/Tokyo')
     
     def get_yesterday_date(self):
         """昨日の日付を日本時間で取得"""
         now_jst = datetime.now(self.jst)
-        yesterday = now_jst - timedelta(days=2)
+        yesterday = now_jst - timedelta(days=1)
         return yesterday.date()
     
     def fetch_rss(self):
@@ -221,11 +221,13 @@ excerpt: "昨日のはてなブックマークから気になった記事をAI�
             logger.warning("No entries found in RSS feed")
             return
         
-        # 昨日の記事をフィルタリング
-        yesterday_entries = self.filter_yesterday_entries(entries)
-        if not yesterday_entries:
-            logger.info("No entries from yesterday found")
-            return
+        yesterday_entries = entries
+
+        # # 昨日の記事をフィルタリング
+        # yesterday_entries = self.filter_yesterday_entries(entries)
+        # if not yesterday_entries:
+        #     logger.info("No entries from yesterday found")
+        #     return
         
         # 各記事を処理
         entries_summaries = []
