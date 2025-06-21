@@ -2,11 +2,13 @@ title: Blog
 description: シンプルなブログ
 url: "https://username.github.io"
 baseurl: "/claude-code-blog-site"
+author: Blog Author
 markdown: kramdown
 permalink: /:year/:month/:day/:title
 highlighter: rouge
 plugins:
   - jekyll-paginate
+  - jekyll-feed
 
 paginate: 5
 paginate_path: "/page:num/"
@@ -23,6 +25,13 @@ defaults:
     values:
       layout: "post"
 
+# RSS Feed Configuration
+feed:
+  posts_limit: 20
+  excerpt_only: false
+  collections:
+    - posts
+
 exclude:
   - Gemfile
   - Gemfile.lock
@@ -32,3 +41,4 @@ exclude:
   - vendor/gems/
   - vendor/ruby/
   - .github/
+  - .n8n/
