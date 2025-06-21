@@ -76,3 +76,4 @@ bundle exec htmlproofer ./_site
 - The site is configured for GitHub Pages deployment with baseurl "/claude-code-blog-site"
 - Posts should include proper excerpts for homepage display
 - CSS follows BEM-like naming conventions for maintainability
+- **IMPORTANT**: 変更する際は必ず、プルリクエストを作成して、こちらで確認できるようにすること
