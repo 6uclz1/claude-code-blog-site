@@ -1,162 +1,156 @@
 {
-  "name": "Hatena RSS Blog Auto Update",
+  "name": "RSS to GitHub Blog Auto Update",
   "nodes": [
     {
       "parameters": {
-        "triggerTimes": {
-          "item": [
-            {
-              "hour": 8,
-              "minute": 0
-            }
-          ]
-        }
-      },
-      "id": "cron-daily-8am",
-      "name": "Daily 8:00 AM",
-      "type": "n8n-nodes-base.cron",
-      "typeVersion": 1,
-      "position": [
-        240,
-        300
-      ]
-    },
-    {
-      "parameters": {
         "url": "https://b.hatena.ne.jp/Buchi_6uclz1/rss",
-        "options": {
-          "allowUnauthorizedCerts": true
-        }
+        "options": {}
       },
-      "id": "rss-feed-reader",
-      "name": "Get Hatena RSS Feed",
+      "id": "b5c39ec2-f419-4a57-9e7d-6d8126536c37",
+      "name": "Read Hatena Bookmark RSS",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1,
       "position": [
-        460,
-        300
+        960,
+        -340
       ]
     },
     {
-      "parameters": {
-        "jsCode": "// 前日の記事をフィルタリング\nconst items = $input.all();\nconst yesterday = new Date();\nyesterday.setDate(yesterday.getDate() - 1);\nyesterday.setHours(0, 0, 0, 0);\n\nconst today = new Date();\ntoday.setHours(0, 0, 0, 0);\n\nconst filteredItems = items.filter(item => {\n  const pubDate = new Date(item.json.isoDate || item.json.pubDate);\n  \n  // 前日の0時から今日の0時未満の記事を取得\n  return pubDate >= yesterday && pubDate < today;\n});\n\nconsole.log(`Found ${filteredItems.length} articles from yesterday`);\n\nif (filteredItems.length === 0) {\n  return [{\n    json: {\n      skip: true,\n      message: \"昨日の記事が見つかりませんでした\"\n    }\n  }];\n}\n\nreturn filteredItems;"
-      },
-      "id": "filter-yesterday-articles",
+      "parameters": {},
+      "id": "f2240cb8-8b05-4a8e-8323-6ca91055c907",
       "name": "Filter Yesterday's Articles",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        680,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "boolean": [
-            {
-              "value1": "={{$json[\"skip\"]}}",
-              "value2": false
-            }
-          ]
-        }
-      },
-      "id": "check-articles-exist",
-      "name": "Articles Found?",
-      "type": "n8n-nodes-base.if",
+      "type": "n8n-nodes-base.function",
       "typeVersion": 1,
       "position": [
-        900,
-        300
+        1160,
+        -340
       ]
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "={{$json[\"link\"]}}",
-        "options": {
-          "allowUnauthorizedCerts": true,
-          "timeout": 30000
-        }
+        "functionCode": "// 元のRSSデータを保持しつつ、Gemini用のプロンプトを準備\nvar items = [];\n\nfor (var i = 0; i < $input.all().length; i++) {\n  var item = $input.all()[i].json;\n  \n  items.push({\n    json: {\n      // Gemini APIリクエスト用のデータ\n      title: item.title || '',\n      content: item.content || item.description || '',\n      link: item.link || '',\n      description: item.description || '',\n      // 元のデータを保持\n      originalData: {\n        title: item.title,\n        link: item.link,\n        description: item.description,\n        content: item.content,\n        pubDate: item.pubDate,\n        guid: item.guid\n      }\n    }\n  });\n}\n\nreturn items;"
       },
-      "id": "fetch-article-content",
-      "name": "Fetch Article Content",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
+      "id": "647bfc1f-8c31-41b8-a87c-3e2bcb99f168",
+      "name": "Prepare for Gemini",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
       "position": [
-        1120,
-        200
+        1360,
+        -340
       ]
     },
     {
       "parameters": {
-        "jsCode": "// HTMLから本文を抽出してクリーンアップ\nconst html = $json.data;\nconst title = $('title').first().text() || $json.title;\n\n// 一般的な本文要素を試行\nconst contentSelectors = [\n  'article',\n  '.entry-content',\n  '.post-content',\n  '.content',\n  '.main-content',\n  '[role=\"main\"]',\n  'main',\n  '.article-body',\n  '.post-body'\n];\n\nlet content = '';\nfor (const selector of contentSelectors) {\n  const element = $(selector).first();\n  if (element.length > 0) {\n    content = element.text();\n    break;\n  }\n}\n\n// フォールバック: body全体から抽出\nif (!content || content.length < 100) {\n  content = $('body').text();\n}\n\n// テキストをクリーンアップ\ncontent = content\n  .replace(/\\s+/g, ' ')\n  .replace(/\\n\\s*\\n/g, '\\n')\n  .trim();\n\n// 長すぎる場合は切り詰め (OpenAI APIの制限考慮)\nif (content.length > 3000) {\n  content = content.substring(0, 3000) + '...';\n}\n\nreturn [{\n  json: {\n    ...($json),\n    cleanTitle: title.trim(),\n    cleanContent: content,\n    originalUrl: $json.link\n  }\n}];"
-      },
-      "id": "extract-content",
-      "name": "Extract Article Content",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1340,
-        200
-      ]
-    },
-    {
-      "parameters": {
-        "model": "gpt-3.5-turbo",
-        "options": {
-          "maxTokens": 500,
-          "temperature": 0.7
+        "resource": "file",
+        "owner": {
+          "__rl": true,
+          "mode": "list",
+          "value": "6uclz1"
         },
-        "prompt": "以下の記事を日本語で簡潔に要約してください。重要なポイントを3-5つの項目で整理し、読みやすくまとめてください。\\n\\nタイトル: {{$json[\"cleanTitle\"]}}\\nURL: {{$json[\"originalUrl\"]}}\\n\\n記事内容:\\n{{$json[\"cleanContent\"]}}\\n\\n要約:"
+        "repository": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-code-blog-site"
+        },
+        "filePath": "={{ $json.path }}",
+        "fileContent": "={{ $json.content }}",
+        "commitMessage": "=新しい記事を追加: {{ $json.title }}"
       },
-      "id": "summarize-with-openai",
-      "name": "Summarize with OpenAI",
-      "type": "n8n-nodes-base.openAi",
+      "id": "d1d8d475-abd4-4c64-b80c-fff8415dd41d",
+      "name": "Push to GitHub",
+      "type": "n8n-nodes-base.github",
       "typeVersion": 1,
       "position": [
-        1560,
-        200
+        2160,
+        -340
       ],
+      "webhookId": "0bf6c15d-4e74-48d9-99fa-0bf957f09d5b",
       "credentials": {
-        "openAiApi": {
-          "id": "openai-api-key",
-          "name": "OpenAI API"
+        "githubApi": {
+          "id": "hmbM5H15296xQFgD",
+          "name": "GitHub account"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// Markdown形式のブログ記事を生成\nconst now = new Date();\nconst year = now.getFullYear();\nconst month = String(now.getMonth() + 1).padStart(2, '0');\nconst day = String(now.getDate()).padStart(2, '0');\nconst hour = String(now.getHours()).padStart(2, '0');\nconst minute = String(now.getMinutes()).padStart(2, '0');\n\nconst dateString = `${year}-${month}-${day}`;\nconst isoString = now.toISOString();\n\n// タイトルをファイル名に適した形式に変換\nconst sanitizedTitle = $json.cleanTitle\n  .replace(/[\\s\\u3040-\\u309F\\u30A0-\\u30FF\\u4E00-\\u9FAF]+/g, '-')\n  .replace(/[^a-zA-Z0-9\\-]/g, '')\n  .replace(/-+/g, '-')\n  .replace(/^-|-$/g, '')\n  .toLowerCase();\n\nconst fileName = `${dateString}-hatena-summary-${sanitizedTitle}.md`;\n\n// 要約テキストを取得\nconst summary = $json.choices[0].message.content;\n\n// Markdownコンテンツを生成\nconst markdownContent = `---\nlayout: post\ntitle: \"${$json.cleanTitle}\"\ndate: ${dateString}\nexcerpt: \"はてなブックマークで注目された記事の要約です。\"\ncategories: [\"はてな要約\"]\ntags: [\"はてなブックマーク\", \"要約\", \"自動生成\"]\nsource_url: \"${$json.originalUrl}\"\n---\n\n## 記事情報\n\n- **元記事**: [${$json.cleanTitle}](${$json.originalUrl})\n- **要約日時**: ${year}年${month}月${day}日 ${hour}:${minute}\n- **情報源**: はてなブックマーク\n\n## 要約\n\n${summary}\n\n## 元記事リンク\n\n詳細については、[こちらの元記事](${$json.originalUrl})をご覧ください。\n\n---\n\n*この記事は、はてなブックマークのRSSフィードから自動生成された要約です。*\n`;\n\nreturn [{\n  json: {\n    fileName: fileName,\n    markdownContent: markdownContent,\n    title: $json.cleanTitle,\n    originalUrl: $json.originalUrl,\n    summary: summary\n  }\n}];"
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
       },
-      "id": "generate-markdown",
-      "name": "Generate Markdown Post",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        780,
+        -340
+      ],
+      "id": "72d392c6-e7d5-4e0c-b2d6-97c62f833e13",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"以下の記事の内容を日本語で簡潔に要約してください（3-5文程度）:\\n\\nタイトル: {{ $json.title }}\\n\\n内容: {{ $json.content || $json.description }}\\n\\nURL: {{ $json.link }}\"\n    }]\n  }]\n}",
+        "options": {}
+      },
+      "id": "ca38c10c-a6eb-40c7-acfb-e1b3d1df9617",
+      "name": "Summarize with Gemini1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1580,
+        -340
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "1HK7XWbk8HMs5R9f",
+          "name": "Header Auth account"
+        },
+        "googlePalmApi": {
+          "id": "XsmZZC4Hxt4IfWNx",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Geminiの応答から要約テキストを抽出し、元のデータと組み合わせ\nvar items = [];\n\n\nfor (var i = 0; i < $input.all().length; i++) {\n  var prepareGeminiData = $('Prepare for Gemini').itemMatching(i);\n  var geminiResponse = $input.all()[i].json;\n  \n  // Geminiの要約テキストを取得\n  var summary = '';\n  if (geminiResponse.candidates && geminiResponse.candidates.length > 0) {\n    var content = geminiResponse.candidates[0].content;\n    if (content && content.parts && content.parts.length > 0) {\n      summary = content.parts[0].text || '';\n    }\n  }\n  \n  // 元のRSSデータから必要な情報を取得\n  var title = prepareGeminiData.json.title || 'Untitled';\n  var link = prepareGeminiData.json.link || '#';\n  var description = prepareGeminiData.json.description || '';\n  \n  items.push({\n    json: {\n      title: title,\n      link: link,\n      summary: summary.trim(),\n      content: summary.trim(),\n      description: description,\n      // originalData: prepareGeminiData\n    }\n  });\n}\n\nreturn items;"
+      },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         1780,
-        200
-      ]
+        -340
+      ],
+      "id": "20d3af34-0566-4fb1-af33-16fd4c023963",
+      "name": "Code"
     },
     {
       "parameters": {
-        "authentication": "accessToken",\n        \"resource\": \"file\",\n        \"operation\": \"create\",\n        \"owner\": \"{{$json.GITHUB_OWNER || 'your-github-username'}}\",\n        \"repository\": \"{{$json.GITHUB_REPO || 'claude-code-blog-site'}}\",\n        \"filePath\": \"_posts/{{$json.fileName}}\",\n        \"fileContent\": \"{{$json.markdownContent}}\",\n        \"commitMessage\": \"自動投稿: {{$json.title}}\"\n      },\n      \"id\": \"create-github-file\",\n      \"name\": \"Create GitHub Post\",\n      \"type\": \"n8n-nodes-base.github\",\n      \"typeVersion\": 1,\n      \"position\": [\n        2000,\n        200\n      ],\n      \"credentials\": {\n        \"githubApi\": {\n          \"id\": \"github-api-token\",\n          \"name\": \"GitHub API Token\"\n        }\n      }\n    },\n    {\n      \"parameters\": {\n        \"method\": \"POST\",\n        \"url\": \"https://api.github.com/repos/{{$json.GITHUB_OWNER || 'your-github-username'}}/{{$json.GITHUB_REPO || 'claude-code-blog-site'}}/pages/builds\",\n        \"authentication\": \"genericCredentialType\",\n        \"genericAuthType\": \"httpHeaderAuth\",\n        \"options\": {\n          \"response\": {\n            \"response\": {\n              \"fullResponse\": true\n            }\n          }\n        }\n      },\n      \"id\": \"trigger-pages-build\",\n      \"name\": \"Trigger GitHub Pages Build\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4.1,\n      \"position\": [\n        2220,\n        200\n      ],\n      \"credentials\": {\n        \"httpHeaderAuth\": {\n          \"id\": \"github-header-auth\",\n          \"name\": \"GitHub Header Auth\"\n        }\n      }\n    },\n    {\n      \"parameters\": {\n        \"jsCode\": \"console.log('昨日の記事がないため、処理をスキップしました:', $json.message);\\nreturn $input.all();\"\n      },\n      \"id\": \"log-skip-message\",\n      \"name\": \"Log Skip Message\",\n      \"type\": \"n8n-nodes-base.code\",\n      \"typeVersion\": 2,\n      \"position\": [\n        1120,\n        400\n      ]\n    },\n    {\n      \"parameters\": {\n        \"jsCode\": \"// エラーハンドリングとログ出力\\nconst success = {\\n  processed: true,\\n  fileName: $json.fileName,\\n  title: $json.title,\\n  timestamp: new Date().toISOString(),\\n  message: 'ブログ記事が正常に作成されました'\\n};\\n\\nconsole.log('ブログ自動更新完了:', success);\\nreturn [{ json: success }];\"\n      },\n      \"id\": \"log-success\",\n      \"name\": \"Log Success\",\n      \"type\": \"n8n-nodes-base.code\",\n      \"typeVersion\": 2,\n      \"position\": [\n        2440,\n        200\n      ]\n    }\n  ],\n  \"connections\": {\n    \"Daily 8:00 AM\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Get Hatena RSS Feed\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Get Hatena RSS Feed\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Filter Yesterday's Articles\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Filter Yesterday's Articles\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Articles Found?\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Articles Found?\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Fetch Article Content\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ],\n        [\n          {\n            \"node\": \"Log Skip Message\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Fetch Article Content\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Extract Article Content\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Extract Article Content\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Summarize with OpenAI\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Summarize with OpenAI\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Generate Markdown Post\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Generate Markdown Post\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Create GitHub Post\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Create GitHub Post\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Trigger GitHub Pages Build\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Trigger GitHub Pages Build\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Log Success\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"active\": true,\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  },\n  \"versionId\": \"1\",\n  \"id\": \"hatena-rss-blog-auto-update\"\n}"
-      }
+        "jsCode": "// 現在の日付を取得\nvar now = new Date();\nvar year = now.getFullYear();\nvar month = (now.getMonth() + 1).toString();\nif (month.length === 1) month = '0' + month;\nvar day = now.getDate().toString();\nif (day.length === 1) day = '0' + day;\nvar dateString = year + '-' + month + '-' + day;\n\n// 複数の記事を処理\nvar allInputs = $input.all();\nvar articles = [];\nvar summaries = [];\n\nfor (var i = 0; i < allInputs.length; i++) {\n  var inputData = allInputs[i].json;\n  \n  if (inputData.summary) {\n    articles.push({\n      title: inputData.title,\n      link: inputData.link,\n      summary: inputData.summary,\n    });\n    summaries.push(inputData.summary);\n  }\n}\n\n\n\n// 記事がない場合のフォールバック\nif (articles.length === 0) {\n}\n\n// マークダウンコンテンツを生成\nvar markdownContent = '---\\n' +\n  'layout: post\\n' +\n  'title: \"' + dateString + '\"\\n' +\n  'date: ' + dateString + '\\n' +\n  'excerpt: \"' + articles.map((row) => row.title) + '\"\\n' +\n  '---\\n\\n';\n\n// 各記事を追加\nfor (var j = 0; j < articles.length; j++) {\n  var article = articles[j];\n  markdownContent += '## ' + (j + 1) + '. ' + article.title + '\\n\\n';\n  markdownContent += article.summary + '\\n\\n';\n  markdownContent += 'source: ' + article.link + '\\n\\n';\n}\n\n// ファイル名を生成\nvar filename = dateString + '-summary' + '.md';\n\nreturn {\n  json: {\n    filename: filename,\n    content: markdownContent,\n    path: '_posts/' + filename,\n    title: dateString,\n    date: dateString,\n    articleCount: articles.length\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        -340
+      ],
+      "id": "7005325c-14ce-4cb0-91b1-35c0edcd07ad",
+      "name": "Code1"
     }
   ],
+  "pinData": {},
   "connections": {
-    "Daily 8:00 AM": {
-      "main": [
-        [
-          {
-            "node": "Get Hatena RSS Feed",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get Hatena RSS Feed": {
+    "Read Hatena Bookmark RSS": {
       "main": [
         [
           {
@@ -171,91 +165,62 @@
       "main": [
         [
           {
-            "node": "Articles Found?",
+            "node": "Prepare for Gemini",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Articles Found?": {
+    "Prepare for Gemini": {
       "main": [
         [
           {
-            "node": "Fetch Article Content",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Log Skip Message",
+            "node": "Summarize with Gemini1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Fetch Article Content": {
+    "Schedule Trigger": {
       "main": [
         [
           {
-            "node": "Extract Article Content",
+            "node": "Read Hatena Bookmark RSS",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Extract Article Content": {
+    "Summarize with Gemini1": {
       "main": [
         [
           {
-            "node": "Summarize with OpenAI",
+            "node": "Code",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Summarize with OpenAI": {
+    "Code": {
       "main": [
         [
           {
-            "node": "Generate Markdown Post",
+            "node": "Code1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Generate Markdown Post": {
+    "Code1": {
       "main": [
         [
           {
-            "node": "Create GitHub Post",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Create GitHub Post": {
-      "main": [
-        [
-          {
-            "node": "Trigger GitHub Pages Build",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Trigger GitHub Pages Build": {
-      "main": [
-        [
-          {
-            "node": "Log Success",
+            "node": "Push to GitHub",
             "type": "main",
             "index": 0
           }
@@ -263,10 +228,14 @@
       ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "1",
-  "id": "hatena-rss-blog-auto-update"
+  "versionId": "ec324c86-f767-4879-84dd-af8462d3a56d",
+  "meta": {
+    "instanceId": "ee82d7e718c4a5cacbf50c2808a7d6a8ae0672c8e3892c73a0147a51ef2f6749"
+  },
+  "id": "0PRHnBrWKueF4gzk",
+  "tags": []
 }
