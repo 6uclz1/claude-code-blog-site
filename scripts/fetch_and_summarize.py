@@ -37,7 +37,7 @@ class HatenaBookmarkSummarizer:
     def get_yesterday_date(self):
         """昨日の日付を日本時間で取得"""
         now_jst = datetime.now(self.jst)
-        yesterday = now_jst - timedelta(days=3)
+        yesterday = now_jst - timedelta(days=2)
         return yesterday.date()
     
     def fetch_rss(self):
