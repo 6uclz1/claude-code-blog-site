@@ -32,8 +32,32 @@ bundle exec jekyll doctor
 bundle exec htmlproofer ./_site
 ```
 
-### Automated Content Generation
+### Docker Development (Recommended)
 ```bash
+# Start Jekyll development server with Docker
+docker-compose up jekyll
+
+# Run Jekyll in background
+docker-compose up -d jekyll
+
+# Stop services
+docker-compose down
+
+# Run Python scripts with Docker
+docker-compose run --rm python-scripts sh -c "
+  pip install -r requirements.txt &&
+  python scripts/fetch_and_summarize.py
+"
+```
+
+### Direct Development (Alternative)
+```bash
+# Install Ruby dependencies
+bundle install
+
+# Start Jekyll development server
+bundle exec jekyll serve
+
 # Install Python dependencies for automation scripts
 pip install -r requirements.txt
 
@@ -41,24 +65,43 @@ pip install -r requirements.txt
 python scripts/fetch_and_summarize.py
 ```
 
+### Testing
+```bash
+# Run all tests with coverage (Docker)
+docker-compose run --rm python-scripts sh -c "
+  pip install -r requirements.txt &&
+  python test_runner.py --coverage
+"
+
+# Run tests directly
+python test_runner.py
+python test_runner.py --coverage
+python test_runner.py --unittest
+
+# Run specific test
+python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
+```
+
 ## Site Architecture
 
 ### Core Structure
 - **_config.yml**: Jekyll configuration with Japanese locale settings, pagination (5 posts per page), and Rouge syntax highlighting
 - **Gemfile**: Ruby dependencies including jekyll-paginate plugin
-- **_layouts/**: Template files for page structure
-  - `default.html`: Base layout with Japanese meta tags and responsive design
-  - `post.html`: Individual blog post layout with Japanese date formatting
-- **_includes/**: Reusable template components
-  - `header.html`: Site navigation with title
-  - `footer.html`: Site footer
-- **_posts/**: Blog posts in Markdown format with YAML front matter
-- **assets/css/**: Custom CSS styling
-- **index.html**: Homepage with paginated post listing
-- **scripts/**: Python automation scripts
-  - `fetch_and_summarize.py`: Automated Hatena bookmark summarization
-- **requirements.txt**: Python dependencies for automation
-- **.github/workflows/**: GitHub Actions for automated deployment and content updates
+- **Docker Environment**:
+  - `Dockerfile`: Jekyll development environment with live reload
+  - `Dockerfile.production`: Multi-stage build for production deployment
+  - `docker-compose.yml`: Development services (Jekyll + Python scripts)
+- **Jekyll Templates**:
+  - `_layouts/`: Template files (`default.html`, `post.html`)
+  - `_includes/`: Reusable components (`header.html`, `footer.html`)
+  - `_posts/`: Blog posts in Markdown with YAML front matter
+  - `assets/css/`: Custom CSS styling
+- **Automation Pipeline**:
+  - `scripts/fetch_and_summarize.py`: Hatena bookmark summarization with Gemini AI
+  - `tests/`: Unit tests with pytest and mocking for Gemini API
+  - `test_runner.py`: Test execution script with coverage support
+  - `requirements.txt`: Python dependencies (production + testing)
+- **CI/CD**: `.github/workflows/` for automated deployment and content updates
 
 ### Key Features
 - **Pagination**: Configured for 5 posts per page with Japanese navigation ("前へ"/"次へ")
@@ -86,17 +129,28 @@ python scripts/fetch_and_summarize.py
 ## Automation Architecture
 
 ### Content Generation Pipeline
-- **Daily Automation**: GitHub Actions workflow runs at 8:00 JST (23:00 UTC) to fetch Hatena bookmarks
-- **Content Processing**: Python script extracts article content and generates AI summaries using Gemini API
-- **Auto-Deployment**: New posts trigger Jekyll rebuild and GitHub Pages deployment
+The `fetch_and_summarize.py` script implements a comprehensive automated content generation system:
 
-### Dependencies
-- **Ruby Environment**: Jekyll 4.3.0 with pagination and feed plugins
-- **Python Environment**: 3.11+ with web scraping and AI libraries (BeautifulSoup, Gemini API)
-- **GitHub Actions**: Automated workflows for content updates and site deployment
+1. **RSS Processing**: Fetches Hatena bookmark RSS feed and filters entries from yesterday using multiple date detection methods (dc_date, URL patterns, published_parsed)
+2. **Content Extraction**: Scrapes full article content using BeautifulSoup with fallback selectors for different site structures
+3. **AI Summarization**: Uses Gemini API to generate 3-5 sentence summaries with error handling and fallback messages
+4. **Markdown Generation**: Creates Jekyll-compatible posts with YAML front matter, excerpts, and proper Japanese formatting
+5. **Deployment**: GitHub Actions triggers Jekyll rebuild and GitHub Pages deployment
+
+### Docker-based Development
+- **Containerized Environment**: Both Jekyll and Python environments run in separate Docker containers
+- **Development Workflow**: `docker-compose up jekyll` provides live-reload development server at localhost:4000
+- **CI/CD Integration**: GitHub Actions uses Docker builds for consistent environments
+- **Testing Isolation**: Tests run in containerized environment with mocked external dependencies
+
+### Testing Strategy
+- **Unit Tests**: Comprehensive pytest suite with 85% code coverage
+- **Gemini API Mocking**: All external API calls are mocked to avoid API key dependencies
+- **Error Scenarios**: Tests cover RSS failures, content extraction errors, and API timeout scenarios
+- **File Operations**: Tests verify Markdown file creation and content formatting
 
 ### Environment Variables Required
-- `GEMINI_API_KEY`: Required for AI summarization in GitHub Actions
+- `GEMINI_API_KEY`: Required for AI summarization in GitHub Actions (not needed for tests)
 
 ## Development Notes
 
