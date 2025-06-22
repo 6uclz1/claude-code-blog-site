@@ -61,14 +61,25 @@ class HatenaBookmarkSummarizer:
         
         for entry in entries:
             try:
-                # published_parsedを使用
-                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                # dc:dateフィールドを使用（feedparserでは`dc_date`として取得される）
+                dc_date = getattr(entry, 'dc_date', None)
+                
+                if dc_date:
+                    # ISO形式の日付をパース（例: 2025-06-20T08:42:35Z）
+                    entry_date = datetime.fromisoformat(dc_date.replace('Z', '+00:00'))
+                    entry_date_jst = entry_date.astimezone(self.jst).date()
+                elif hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    # フォールバック: published_parsedを使用
                     entry_date = datetime(*entry.published_parsed[:6], tzinfo=pytz.UTC)
                     entry_date_jst = entry_date.astimezone(self.jst).date()
+                else:
+                    logger.warning(f"No date field found for entry: {entry.get('title', 'Unknown')}")
+                    continue
+                
+                if entry_date_jst == yesterday:
+                    yesterday_entries.append(entry)
+                    logger.info(f"Found yesterday's entry: {entry.title} (date: {entry_date_jst})")
                     
-                    if entry_date_jst == yesterday:
-                        yesterday_entries.append(entry)
-                        logger.info(f"Found yesterday's entry: {entry.title}")
             except Exception as e:
                 logger.warning(f"Error parsing date for entry {entry.get('title', 'Unknown')}: {e}")
                 continue
@@ -156,6 +167,38 @@ URL: {url}
             logger.error(f"Error generating summary with Gemini: {e}")
             return f"この記事は「{title}」について書かれています。要約の生成に失敗しましたが、詳細は元記事をご確認ください。"
     
+    def generate_excerpt(self, entries_summaries):
+        """記事全体のエクセルプト（短い要約）を生成"""
+        try:
+            # 各記事のタイトルと要約を結合
+            all_summaries = []
+            for entry, summary in entries_summaries:
+                all_summaries.append(f"「{entry['title']}」- {summary}")
+            
+            combined_text = " / ".join(all_summaries)
+            
+            # Gemini APIでエクセルプトを生成
+            excerpt_prompt = f"""以下の記事要約を1-2文の短い文章にまとめてください。
+全体的なテーマや共通点があれば含めてください。
+
+記事要約:
+{combined_text}
+
+短い要約（1-2文）:"""
+            
+            response = self.model.generate_content(excerpt_prompt)
+            excerpt = response.text.strip()
+            
+            # 長すぎる場合は切り詰める
+            if len(excerpt) > 150:
+                excerpt = excerpt[:147] + "..."
+            
+            return excerpt
+            
+        except Exception as e:
+            logger.warning(f"Error generating excerpt: {e}")
+            return f"{len(entries_summaries)}件の記事をAIで要約しました"
+
     def create_markdown_post(self, entries_summaries, date):
         """Markdown形式のブログ投稿を作成"""
         date_str = date.strftime('%Y-%m-%d')
@@ -170,11 +213,14 @@ URL: {url}
             logger.info("No entries to summarize, skipping post creation")
             return False
         
+        # エクセルプトを生成
+        excerpt = self.generate_excerpt(entries_summaries)
+        
         content = f"""---
 layout: post
 title: "はてなブックマーク記事まとめ - {date.strftime('%Y年%m月%d日')}"
 date: {date_str} 09:00:00 +0900
-excerpt: "昨日のはてなブックマークから気になった記事をAIで要約しました"
+excerpt: "{excerpt}"
 ---
 
 昨日のはてなブックマークから気になった記事をAIで要約してお届けします。
