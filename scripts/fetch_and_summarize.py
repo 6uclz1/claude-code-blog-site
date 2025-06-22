@@ -57,28 +57,57 @@ class HatenaBookmarkSummarizer:
     def filter_yesterday_entries(self, entries):
         """昨日の記事のみフィルタリング"""
         yesterday = self.get_yesterday_date()
+        yesterday_str = yesterday.strftime('%Y%m%d')  # 20250619形式
         yesterday_entries = []
         
         for entry in entries:
             try:
-                # dc:dateフィールドを使用（feedparserでは`dc_date`として取得される）
+                # 1. dc:dateフィールドを使用（優先）
                 dc_date = getattr(entry, 'dc_date', None)
+                entry_date_jst = None
                 
                 if dc_date:
                     # ISO形式の日付をパース（例: 2025-06-20T08:42:35Z）
                     entry_date = datetime.fromisoformat(dc_date.replace('Z', '+00:00'))
                     entry_date_jst = entry_date.astimezone(self.jst).date()
-                elif hasattr(entry, 'published_parsed') and entry.published_parsed:
-                    # フォールバック: published_parsedを使用
+                
+                # 2. 念のため、entryのIDやlinkからも日付を抽出を試行
+                # はてなブックマークのURLパターン: /Buchi_6uclz1/20250620#bookmark-xxx
+                date_from_url = None
+                if hasattr(entry, 'id') and entry.id:
+                    # entry.idから日付を抽出
+                    import re
+                    match = re.search(r'/(\d{8})#', entry.id)
+                    if match:
+                        date_from_url = match.group(1)
+                
+                # 3. dc_dateが利用できない場合はURLから抽出した日付を使用
+                if not entry_date_jst and date_from_url:
+                    try:
+                        url_date = datetime.strptime(date_from_url, '%Y%m%d')
+                        entry_date_jst = url_date.date()
+                    except:
+                        pass
+                
+                # 4. 最後の手段：published_parsedを使用
+                if not entry_date_jst and hasattr(entry, 'published_parsed') and entry.published_parsed:
                     entry_date = datetime(*entry.published_parsed[:6], tzinfo=pytz.UTC)
                     entry_date_jst = entry_date.astimezone(self.jst).date()
-                else:
-                    logger.warning(f"No date field found for entry: {entry.get('title', 'Unknown')}")
+                
+                # 日付が取得できない場合はスキップ
+                if not entry_date_jst:
+                    logger.warning(f"No date found for entry: {entry.get('title', 'Unknown')}")
                     continue
                 
+                # 昨日の記事かチェック
                 if entry_date_jst == yesterday:
                     yesterday_entries.append(entry)
                     logger.info(f"Found yesterday's entry: {entry.title} (date: {entry_date_jst})")
+                
+                # URLから抽出した日付もチェック（dc:dateと異なる場合がある）
+                elif date_from_url == yesterday_str:
+                    yesterday_entries.append(entry)
+                    logger.info(f"Found yesterday's entry from URL: {entry.title} (URL date: {date_from_url})")
                     
             except Exception as e:
                 logger.warning(f"Error parsing date for entry {entry.get('title', 'Unknown')}: {e}")
