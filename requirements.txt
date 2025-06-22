@@ -5,3 +5,8 @@ python-dateutil==2.8.2
 google-generativeai==0.3.2
 lxml==4.9.3
 pytz==2023.3
+
+# Test dependencies
+pytest==7.4.0
+pytest-mock==3.11.1
+coverage==7.2.7
