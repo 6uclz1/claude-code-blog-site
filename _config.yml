@@ -40,5 +40,5 @@ exclude:
   - vendor/cache/
   - vendor/gems/
   - vendor/ruby/
+  - scripts/
   - .github/
-  - .n8n/
