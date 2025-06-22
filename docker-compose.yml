@@ -11,7 +11,7 @@ services:
       - bundle_cache:/usr/local/bundle
     environment:
       - JEKYLL_ENV=development
-    command: bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --force_polling
+    command: bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --force_polling --baseurl ""
 
   python-scripts:
     image: python:3.11-alpine
