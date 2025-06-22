@@ -27,13 +27,13 @@ jobs:
         uses: docker/setup-buildx-action@v3
       
       - name: Build Docker services
-        run: docker-compose build
+        run: docker compose build
       
       - name: Run fetch and summarize script in Docker
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          docker-compose run --rm python-scripts sh -c "
+          docker compose run --rm python-scripts sh -c "
             pip install -r requirements.txt &&
             python scripts/fetch_and_summarize.py
           "
