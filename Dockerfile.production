@@ -7,10 +7,9 @@ RUN apk add --no-cache \
     git \
     tzdata
 
-COPY Gemfile Gemfile.lock ./
+COPY Gemfile ./
 
-RUN bundle config set --local deployment 'true' && \
-    bundle config set --local without 'development test' && \
+RUN bundle config set --local without 'development test' && \
     bundle install
 
 COPY . .
