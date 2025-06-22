@@ -85,7 +85,7 @@ main {
 .post-meta {
   color: #94a3b8;
   font-size: 14px;
-  margin-bottom: 15px;
+  margin-bottom: 8px;
 }
 
 .post-excerpt {
@@ -97,17 +97,16 @@ main {
 /* Single Post */
 .post-header {
   text-align: center;
-  background-color: #0f172a;
   margin-bottom: 40px;
-  padding-bottom: 20px;
   border-bottom: 1px solid #334155;
 }
 
 .post-header h1 {
-  font-size: 32px;
+  font-size: 24px;
   font-weight: 700;
   color: #f1f5f9;
-  margin-bottom: 10px;
+  margin-bottom: 2px;
+  padding-top: 8px;
 }
 
 .post-content {
