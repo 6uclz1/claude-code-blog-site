@@ -314,6 +314,11 @@ excerpt: "{excerpt}"
                 # 記事内容を取得
                 content = self.extract_article_content(url)
                 
+                # コンテンツ取得に失敗した場合はスキップ
+                if content == "コンテンツの取得に失敗しました":
+                    logger.warning(f"Skipping entry due to content extraction failure: {title}")
+                    continue
+                
                 # 要約を生成
                 summary = self.summarize_with_gemini(title, url, content)
                 
