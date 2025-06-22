@@ -17,10 +17,16 @@ import argparse
 
 def run_pytest(with_coverage=False):
     """pytestでテストを実行"""
-    cmd = ['python', '-m', 'pytest']
+    cmd = ['python', '-m', 'pytest', '-v', 'tests/', '--ignore=_site', '--ignore=.jekyll-cache']
     
     if with_coverage:
-        cmd.extend(['--cov=scripts', '--cov-report=html', '--cov-report=term'])
+        try:
+            # pytest-covが利用可能かチェック
+            subprocess.run(['python', '-c', 'import pytest_cov'], check=True, capture_output=True)
+            cmd.extend(['--cov=scripts', '--cov-report=html', '--cov-report=term'])
+        except subprocess.CalledProcessError:
+            print("警告: pytest-covが見つかりません。カバレッジなしで実行します。")
+            print("カバレッジを使用するには: pip install pytest-cov")
     
     try:
         result = subprocess.run(cmd, check=True)

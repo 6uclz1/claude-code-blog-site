@@ -4,6 +4,11 @@ _site/
 .jekyll-cache/
 .jekyll-metadata
 
+# Test generated files
+.pytest_cache/
+htmlcov/
+.coverage
+
 # Ruby and Bundler
 Gemfile.lock
 vendor/

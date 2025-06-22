@@ -9,4 +9,5 @@ pytz==2023.3
 # Test dependencies
 pytest==7.4.0
 pytest-mock==3.11.1
+pytest-cov==4.1.0
 coverage==7.2.7

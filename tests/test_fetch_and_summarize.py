@@ -162,9 +162,9 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
     
     def test_summarize_with_gemini_success(self):
         """Gemini要約生成成功のテスト"""
-        # モックの応答
+        # モックの応答（50文字以上にする）
         mock_response = Mock()
-        mock_response.text = "これはテスト記事の要約です。主要なポイントを説明しています。"
+        mock_response.text = "これはテスト記事の要約です。主要なポイントを説明しています。詳細な技術的内容が含まれており、実装方法についても説明されています。"
         self.mock_model.generate_content.return_value = mock_response
         
         result = self.summarizer.summarize_with_gemini(
@@ -173,7 +173,7 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
             "Test content here"
         )
         
-        self.assertEqual(result, "これはテスト記事の要約です。主要なポイントを説明しています。")
+        self.assertEqual(result, "これはテスト記事の要約です。主要なポイントを説明しています。詳細な技術的内容が含まれており、実装方法についても説明されています。")
         self.mock_model.generate_content.assert_called_once()
     
     def test_summarize_with_gemini_short_response(self):
@@ -233,11 +233,8 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
         
         self.assertIn("1件の記事をAIで要約しました", result)
     
-    @patch('scripts.fetch_and_summarize.os.path.exists')
-    def test_create_markdown_post_success(self, mock_exists):
+    def test_create_markdown_post_success(self):
         """Markdownファイル作成成功のテスト"""
-        mock_exists.return_value = False
-        
         # エクセルプト生成をモック
         with patch.object(self.summarizer, 'generate_excerpt', return_value='テスト要約'):
             entries_summaries = [
@@ -247,6 +244,11 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
             # _postsディレクトリを作成
             os.makedirs('_posts', exist_ok=True)
             
+            # ファイルが存在しないことを確認
+            expected_file = '_posts/2025-06-21-bookmark-summary.md'
+            if os.path.exists(expected_file):
+                os.remove(expected_file)
+            
             result = self.summarizer.create_markdown_post(
                 entries_summaries, 
                 date(2025, 6, 21)
@@ -255,7 +257,6 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
             self.assertTrue(result)
             
             # ファイルが作成されたかチェック
-            expected_file = '_posts/2025-06-21-bookmark-summary.md'
             self.assertTrue(os.path.exists(expected_file))
             
             # ファイル内容をチェック
