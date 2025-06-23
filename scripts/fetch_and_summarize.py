@@ -225,7 +225,7 @@ URL: {url}
             # 要約元記事のタイトルとURLをBullet List形式で追加
             source_links = []
             for entry, _ in entries_summaries:
-                source_links.append(f"- [{entry['title']}]({entry['url']})")
+                source_links.append(f"- [{entry['title']}]({entry['url']})\n\n")
             
             # AI要約と元記事リンクを結合
             excerpt = ai_summary + "\n\n" + "\n".join(source_links)
