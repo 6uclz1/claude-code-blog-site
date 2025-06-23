@@ -103,14 +103,14 @@ main {
 
 .post-excerpt ul, .post-excerpt ol {
   margin: 15px 0;
-  padding-left: 25px;
-  list-style-type: disc;
+  padding-left: 0;
+  list-style: none;
 }
 
 .post-excerpt li {
-  display: list-item;
   margin-bottom: 8px;
   line-height: 1.6;
+  padding-left: 0;
 }
 
 .post-excerpt a {
