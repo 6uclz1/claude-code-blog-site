@@ -16,7 +16,7 @@ layout: default
         </div>
         {% if post.excerpt %}
           <div class="post-excerpt">
-            {{ post.excerpt }}
+            {{ post.excerpt | markdownify }}
           </div>
         {% endif %}
       </li>

@@ -219,7 +219,7 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
         
         result = self.summarizer.generate_excerpt(entries_summaries)
         
-        expected = "技術記事とビジネス記事の要約をまとめました。\n\n- [Tech Article](https://example.com/tech)\n- [Business Article](https://example.com/biz)"
+        expected = "技術記事とビジネス記事の要約をまとめました。\n\n- [Tech Article](https://example.com/tech)\n\n\n- [Business Article](https://example.com/biz)\n\n"
         self.assertEqual(result, expected)
     
     def test_generate_excerpt_error(self):

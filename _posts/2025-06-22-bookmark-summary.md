@@ -5,9 +5,13 @@ date: 2025-06-22 09:00:00 +0900
 excerpt: "AIツール「Claude Code」の進化がソフトウェア開発の効率性とエンジニアの役割を根本的に変え、その活用戦略とツールが重要になっている。同時に、低価格で高品質なゲームや電子書籍の提供は、現代社会における新たな価値創造と効率的な享受の形を提示している。
 
 - [Claude Code時代のソフトウェアエンジニア生存戦略｜suthio](https://note.com/suthio/n/n4f79fbe4efda)
+
 - [ホントに320円で遊べていいんですか？ “呪文詠唱”ローグライト「スペルトナエル」にハマってGWが溶けた記録｜てっけん](https://note.com/tekken8810/n/nae90abf111e2)
+
 - [早川書房の3000作品以上が最大80％割引のビッグな電子書籍セールがきたので、新作ノンフィクション・SFを中心にオススメを紹介する - 基本読書](https://huyukiitoichi.hatenadiary.jp/entry/2025/06/22/080000)
+
 - [GitHub - qdhenry/Claude-Command-Suite: Professional slash commands for Claude Code that provide structured workflows for software development tasks including code review, feature creation, security auditing, and architectural analysis.](https://github.com/qdhenry/Claude-Command-Suite)
+
 - [【Claude Code】カスタムSlash Commandの作り方とコマンド例を紹介する](https://zenn.dev/oikon/articles/cb11b84f891228)"
 ---
 

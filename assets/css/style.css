@@ -63,10 +63,6 @@ main {
   transition: transform 0.2s ease;
 }
 
-.post-item:hover {
-  transform: translateY(-2px);
-}
-
 .post-title {
   font-size: 24px;
   font-weight: 600;
@@ -92,6 +88,27 @@ main {
   color: #cbd5e1;
   line-height: 1.7;
   word-break: break-all;
+}
+
+.post-excerpt ul, .post-excerpt ol {
+  margin: 15px 0;
+  padding-left: 25px;
+  list-style-type: disc;
+}
+
+.post-excerpt li {
+  display: list-item;
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+.post-excerpt a {
+  color: #60a5fa;
+  text-decoration: none;
+}
+
+.post-excerpt a:hover {
+  text-decoration: underline;
 }
 
 /* Single Post */
@@ -177,6 +194,15 @@ main {
   background: none;
   padding: 0;
   color: inherit;
+}
+
+.post-content a {
+  color: #60a5fa;
+  text-decoration: none;
+}
+
+.post-content a:hover {
+  text-decoration: underline;
 }
 
 /* Pagination */
