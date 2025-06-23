@@ -5,9 +5,9 @@ layout: default
 <div class="home">
   <div class="post-list">
     {% for post in paginator.posts %}
-      <div class="post-item">
+      <div class="post-item" data-url="{{ post.url | relative_url }}" tabindex="0" role="article" aria-label="{{ post.title }} - 記事を開く">
         <h2 class="post-title">
-          <a href="{{ post.url | relative_url }}">{{ post.title }}</a>
+          {{ post.title }}
         </h2>
         <div class="post-meta">
           <time datetime="{{ post.date | date_to_xmlschema }}">
@@ -45,3 +45,36 @@ layout: default
     </div>
   {% endif %}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const postItems = document.querySelectorAll('.post-item');
+  
+  postItems.forEach(function(item) {
+    // クリックイベント
+    item.addEventListener('click', function(e) {
+      // excerpt内のリンクがクリックされた場合は何もしない
+      if (e.target.tagName === 'A' && e.target.closest('.post-excerpt')) {
+        return;
+      }
+      
+      // カード全体がクリックされた場合は記事詳細に遷移
+      const url = this.dataset.url;
+      if (url) {
+        window.location.href = url;
+      }
+    });
+    
+    // キーボードアクセシビリティ対応
+    item.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        const url = this.dataset.url;
+        if (url) {
+          window.location.href = url;
+        }
+      }
+    });
+  });
+});
+</script>
