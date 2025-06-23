@@ -216,17 +216,29 @@ URL: {url}
 短い要約（1-2文）:"""
             
             response = self.model.generate_content(excerpt_prompt)
-            excerpt = response.text.strip()
+            ai_summary = response.text.strip()
             
             # 長すぎる場合は切り詰める
-            if len(excerpt) > 150:
-                excerpt = excerpt[:147] + "..."
+            if len(ai_summary) > 150:
+                ai_summary = ai_summary[:147] + "..."
+            
+            # 要約元記事のタイトルとURLをBullet List形式で追加
+            source_links = []
+            for entry, _ in entries_summaries:
+                source_links.append(f"- [{entry['title']}]({entry['url']})")
+            
+            # AI要約と元記事リンクを結合
+            excerpt = ai_summary + "\n\n" + "\n".join(source_links)
             
             return excerpt
             
         except Exception as e:
             logger.warning(f"Error generating excerpt: {e}")
-            return f"{len(entries_summaries)}件の記事をAIで要約しました"
+            # エラー時でも元記事リンクは表示する
+            source_links = []
+            for entry, _ in entries_summaries:
+                source_links.append(f"- [{entry['title']}]({entry['url']})")
+            return f"{len(entries_summaries)}件の記事をAIで要約しました\n\n" + "\n".join(source_links)
 
     def create_markdown_post(self, entries_summaries, date):
         """Markdown形式のブログ投稿を作成"""
