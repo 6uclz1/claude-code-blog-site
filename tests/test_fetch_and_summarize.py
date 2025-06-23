@@ -219,7 +219,8 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
         
         result = self.summarizer.generate_excerpt(entries_summaries)
         
-        self.assertEqual(result, "技術記事とビジネス記事の要約をまとめました。")
+        expected = "技術記事とビジネス記事の要約をまとめました。\n\n- [Tech Article](https://example.com/tech)\n- [Business Article](https://example.com/biz)"
+        self.assertEqual(result, expected)
     
     def test_generate_excerpt_error(self):
         """エクセルプト生成エラーのテスト"""
@@ -232,6 +233,7 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
         result = self.summarizer.generate_excerpt(entries_summaries)
         
         self.assertIn("1件の記事をAIで要約しました", result)
+        self.assertIn("- [Article](https://example.com)", result)
     
     def test_create_markdown_post_success(self):
         """Markdownファイル作成成功のテスト"""
