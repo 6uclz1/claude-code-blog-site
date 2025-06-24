@@ -267,6 +267,10 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
                 self.assertIn('Test Article', content)
                 self.assertIn('Test summary', content)
                 self.assertIn('テスト要約', content)
+                # 日付フォーマットが適切かチェック（現在時刻ベース）
+                import re
+                date_pattern = r'date: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \+\d{4}'
+                self.assertRegex(content, date_pattern, "Date format should include current timestamp")
     
     @patch('scripts.fetch_and_summarize.os.path.exists')
     def test_create_markdown_post_file_exists(self, mock_exists):
