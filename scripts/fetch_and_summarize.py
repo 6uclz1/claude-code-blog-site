@@ -242,6 +242,7 @@ URL: {url}
 
     def create_markdown_post(self, entries_summaries, date):
         """Markdown形式のブログ投稿を作成"""
+        # ファイル名は対象日付を使用
         date_str = date.strftime('%Y-%m-%d')
         filename = f"_posts/{date_str}-bookmark-summary.md"
         
@@ -257,10 +258,14 @@ URL: {url}
         # エクセルプトを生成
         excerpt = self.generate_excerpt(entries_summaries)
         
+        # 記事の公開日時は現在時刻を使用（RSS通知のため）
+        now_jst = datetime.now(self.jst)
+        publish_date_str = now_jst.strftime('%Y-%m-%d %H:%M:%S %z')
+        
         content = f"""---
 layout: post
 title: "はてなブックマーク記事まとめ - {date.strftime('%Y年%m月%d日')}"
-date: {date_str} 09:00:00 +0900
+date: {publish_date_str}
 excerpt: "{excerpt}"
 ---
 
