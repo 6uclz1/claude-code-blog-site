@@ -205,60 +205,30 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
         self.assertIn("Test Title", result)
         self.assertIn("要約の生成に失敗しました", result)
     
-    def test_generate_excerpt(self):
-        """エクセルプト生成のテスト"""
-        # モックの応答
-        mock_response = Mock()
-        mock_response.text = "技術記事とビジネス記事の要約をまとめました。"
-        self.mock_model.generate_content.return_value = mock_response
-        
+    def test_create_individual_markdown_posts_success(self):
+        """個別Markdownファイル作成成功のテスト"""
         entries_summaries = [
-            ({'title': 'Tech Article', 'url': 'https://example.com/tech'}, 'Tech summary'),
-            ({'title': 'Business Article', 'url': 'https://example.com/biz'}, 'Business summary')
+            ({'title': 'Test Article 1', 'url': 'https://example.com/1'}, 'Test summary 1'),
+            ({'title': 'Test Article 2', 'url': 'https://example.com/2'}, 'Test summary 2')
         ]
         
-        result = self.summarizer.generate_excerpt(entries_summaries)
+        # _postsディレクトリを作成
+        os.makedirs('_posts', exist_ok=True)
         
-        expected = "技術記事とビジネス記事の要約をまとめました。\n\n- [Tech Article](https://example.com/tech)\n\n\n- [Business Article](https://example.com/biz)\n\n"
-        self.assertEqual(result, expected)
-    
-    def test_generate_excerpt_error(self):
-        """エクセルプト生成エラーのテスト"""
-        self.mock_model.generate_content.side_effect = Exception("API Error")
+        result = self.summarizer.create_individual_markdown_posts(
+            entries_summaries, 
+            date(2025, 6, 21)
+        )
         
-        entries_summaries = [
-            ({'title': 'Article', 'url': 'https://example.com'}, 'Summary')
+        self.assertEqual(result, 2)
+        
+        # ファイルが作成されたかチェック
+        expected_files = [
+            '_posts/2025-06-21-bookmark-01-Test-Article-1.md',
+            '_posts/2025-06-21-bookmark-02-Test-Article-2.md'
         ]
         
-        result = self.summarizer.generate_excerpt(entries_summaries)
-        
-        self.assertIn("1件の記事をAIで要約しました", result)
-        self.assertIn("- [Article](https://example.com)", result)
-    
-    def test_create_markdown_post_success(self):
-        """Markdownファイル作成成功のテスト"""
-        # エクセルプト生成をモック
-        with patch.object(self.summarizer, 'generate_excerpt', return_value='テスト要約'):
-            entries_summaries = [
-                ({'title': 'Test Article', 'url': 'https://example.com'}, 'Test summary')
-            ]
-            
-            # _postsディレクトリを作成
-            os.makedirs('_posts', exist_ok=True)
-            
-            # ファイルが存在しないことを確認
-            expected_file = '_posts/2025-06-21-bookmark-summary.md'
-            if os.path.exists(expected_file):
-                os.remove(expected_file)
-            
-            result = self.summarizer.create_markdown_post(
-                entries_summaries, 
-                date(2025, 6, 21)
-            )
-            
-            self.assertTrue(result)
-            
-            # ファイルが作成されたかチェック
+        for expected_file in expected_files:
             self.assertTrue(os.path.exists(expected_file))
             
             # ファイル内容をチェック
@@ -266,33 +236,44 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
                 content = f.read()
                 self.assertIn('Test Article', content)
                 self.assertIn('Test summary', content)
-                self.assertIn('テスト要約', content)
                 # 日付フォーマットが適切かチェック（現在時刻ベース）
                 import re
                 date_pattern = r'date: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \+\d{4}'
                 self.assertRegex(content, date_pattern, "Date format should include current timestamp")
     
-    @patch('scripts.fetch_and_summarize.os.path.exists')
-    def test_create_markdown_post_file_exists(self, mock_exists):
-        """ファイルが既に存在する場合のテスト"""
-        mock_exists.return_value = True
-        
-        result = self.summarizer.create_markdown_post([], date(2025, 6, 21))
-        
-        self.assertFalse(result)
-    
-    def test_create_markdown_post_no_entries(self):
+    def test_create_individual_markdown_posts_no_entries(self):
         """エントリがない場合のテスト"""
-        result = self.summarizer.create_markdown_post([], date(2025, 6, 21))
+        result = self.summarizer.create_individual_markdown_posts([], date(2025, 6, 21))
         
-        self.assertFalse(result)
+        self.assertEqual(result, 0)
+    
+    def test_create_individual_markdown_posts_file_exists(self):
+        """ファイルが既に存在する場合のテスト"""
+        entries_summaries = [
+            ({'title': 'Test Article', 'url': 'https://example.com'}, 'Test summary')
+        ]
+        
+        # _postsディレクトリを作成
+        os.makedirs('_posts', exist_ok=True)
+        
+        # 既存ファイルを作成
+        existing_file = '_posts/2025-06-21-bookmark-01-Test-Article.md'
+        with open(existing_file, 'w', encoding='utf-8') as f:
+            f.write('existing content')
+        
+        result = self.summarizer.create_individual_markdown_posts(
+            entries_summaries, 
+            date(2025, 6, 21)
+        )
+        
+        self.assertEqual(result, 0)  # 既存ファイルがあるため0件作成
     
     @patch.object(HatenaBookmarkSummarizer, 'fetch_rss')
     @patch.object(HatenaBookmarkSummarizer, 'filter_yesterday_entries')
     @patch.object(HatenaBookmarkSummarizer, 'extract_article_content')
     @patch.object(HatenaBookmarkSummarizer, 'summarize_with_gemini')
-    @patch.object(HatenaBookmarkSummarizer, 'create_markdown_post')
-    def test_run_success(self, mock_create_post, mock_summarize, mock_extract, 
+    @patch.object(HatenaBookmarkSummarizer, 'create_individual_markdown_posts')
+    def test_run_success(self, mock_create_posts, mock_summarize, mock_extract, 
                         mock_filter, mock_fetch):
         """メイン処理の成功テスト"""
         # モックの設定
@@ -300,7 +281,7 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
         mock_filter.return_value = [Mock(title='Test', link='https://example.com')]
         mock_extract.return_value = "Test content"
         mock_summarize.return_value = "Test summary"
-        mock_create_post.return_value = True
+        mock_create_posts.return_value = 1
         
         # 実行
         self.summarizer.run()
@@ -310,7 +291,7 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
         mock_filter.assert_called_once()
         mock_extract.assert_called_once()
         mock_summarize.assert_called_once()
-        mock_create_post.assert_called_once()
+        mock_create_posts.assert_called_once()
     
     @patch.object(HatenaBookmarkSummarizer, 'fetch_rss')
     def test_run_no_entries(self, mock_fetch):
