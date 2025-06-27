@@ -24,7 +24,7 @@ JekyllとRubyを使用して構築された日本語のブログサイトです�
 
 ```bash
 # リポジトリをクローン
-git clone https://github.com/your-username/claude-code-blog-site.git
+git clone https://github.com/6uclz1/claude-code-blog-site.git
 cd claude-code-blog-site
 
 # Jekyll開発サーバーを起動
