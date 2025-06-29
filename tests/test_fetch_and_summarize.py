@@ -205,49 +205,49 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
         self.assertIn("Test Title", result)
         self.assertIn("要約の生成に失敗しました", result)
     
-    def test_create_individual_markdown_posts_success(self):
-        """個別Markdownファイル作成成功のテスト"""
+    def test_create_daily_markdown_post_success(self):
+        """一日分Markdownファイル作成成功のテスト"""
         entries_summaries = [
-            ({'title': 'Test Article 1', 'url': 'https://example.com/1'}, 'Test summary 1'),
+            ({'title': 'Test Article 1', 'url': 'https://example.com/1'}, 'Test summary 1 with more detailed content to make it longer than 200 characters for excerpt test'),
             ({'title': 'Test Article 2', 'url': 'https://example.com/2'}, 'Test summary 2')
         ]
         
         # _postsディレクトリを作成
         os.makedirs('_posts', exist_ok=True)
         
-        result = self.summarizer.create_individual_markdown_posts(
+        result = self.summarizer.create_daily_markdown_post(
             entries_summaries, 
             date(2025, 6, 21)
         )
         
-        self.assertEqual(result, 2)
+        self.assertEqual(result, 1)
         
         # ファイルが作成されたかチェック
-        expected_files = [
-            '_posts/2025-06-21-bookmark-01-Test-Article-1.md',
-            '_posts/2025-06-21-bookmark-02-Test-Article-2.md'
-        ]
+        expected_file = '_posts/2025-06-21-hatena-bookmarks.md'
+        self.assertTrue(os.path.exists(expected_file))
         
-        for expected_file in expected_files:
-            self.assertTrue(os.path.exists(expected_file))
-            
-            # ファイル内容をチェック
-            with open(expected_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-                self.assertIn('Test Article', content)
-                self.assertIn('Test summary', content)
-                # 日付フォーマットが適切かチェック（現在時刻ベース）
-                import re
-                date_pattern = r'date: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \+\d{4}'
-                self.assertRegex(content, date_pattern, "Date format should include current timestamp")
+        # ファイル内容をチェック
+        with open(expected_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            self.assertIn('はてなブックマーク 2025年06月21日 の記事まとめ (2件)', content)
+            self.assertIn('Test Article 1', content)
+            self.assertIn('Test Article 2', content)
+            self.assertIn('Test summary 1', content)
+            self.assertIn('Test summary 2', content)
+            self.assertIn('## 1. Test Article 1', content)
+            self.assertIn('## 2. Test Article 2', content)
+            # 日付フォーマットが適切かチェック（現在時刻ベース）
+            import re
+            date_pattern = r'date: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \+\d{4}'
+            self.assertRegex(content, date_pattern, "Date format should include current timestamp")
     
-    def test_create_individual_markdown_posts_no_entries(self):
+    def test_create_daily_markdown_post_no_entries(self):
         """エントリがない場合のテスト"""
-        result = self.summarizer.create_individual_markdown_posts([], date(2025, 6, 21))
+        result = self.summarizer.create_daily_markdown_post([], date(2025, 6, 21))
         
         self.assertEqual(result, 0)
     
-    def test_create_individual_markdown_posts_file_exists(self):
+    def test_create_daily_markdown_post_file_exists(self):
         """ファイルが既に存在する場合のテスト"""
         entries_summaries = [
             ({'title': 'Test Article', 'url': 'https://example.com'}, 'Test summary')
@@ -257,11 +257,11 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
         os.makedirs('_posts', exist_ok=True)
         
         # 既存ファイルを作成
-        existing_file = '_posts/2025-06-21-bookmark-01-Test-Article.md'
+        existing_file = '_posts/2025-06-21-hatena-bookmarks.md'
         with open(existing_file, 'w', encoding='utf-8') as f:
             f.write('existing content')
         
-        result = self.summarizer.create_individual_markdown_posts(
+        result = self.summarizer.create_daily_markdown_post(
             entries_summaries, 
             date(2025, 6, 21)
         )
@@ -272,7 +272,7 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
     @patch.object(HatenaBookmarkSummarizer, 'filter_yesterday_entries')
     @patch.object(HatenaBookmarkSummarizer, 'extract_article_content')
     @patch.object(HatenaBookmarkSummarizer, 'summarize_with_gemini')
-    @patch.object(HatenaBookmarkSummarizer, 'create_individual_markdown_posts')
+    @patch.object(HatenaBookmarkSummarizer, 'create_daily_markdown_post')
     def test_run_success(self, mock_create_posts, mock_summarize, mock_extract, 
                         mock_filter, mock_fetch):
         """メイン処理の成功テスト"""
