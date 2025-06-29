@@ -204,75 +204,76 @@ URL: {url}
             return f"この記事は「{title}」について書かれています。要約の生成に失敗しましたが、詳細は元記事をご確認ください。"
     
 
-    def create_individual_markdown_posts(self, entries_summaries, date):
-        """各ブックマークごとに個別のMarkdown記事を作成"""
+    def create_daily_markdown_post(self, entries_summaries, date):
+        """一日分のブックマークをまとめて一つのMarkdown記事を作成"""
         if not entries_summaries:
             logger.info("No entries to summarize, skipping post creation")
             return 0
         
-        created_count = 0
+        # ファイル名生成：日付のみ
+        date_str = date.strftime('%Y-%m-%d')
+        filename = f"_posts/{date_str}-hatena-bookmarks.md"
         
-        for i, (entry, summary) in enumerate(entries_summaries):
-            try:
-                # ファイル名生成：日付 + 連番 + タイトルの一部
-                date_str = date.strftime('%Y-%m-%d')
-                
-                # タイトルをファイル名に適した形式に変換
-                safe_title = re.sub(r'[^\w\s-]', '', entry['title'])[:30]
-                safe_title = re.sub(r'[-\s]+', '-', safe_title).strip('-')
-                
-                filename = f"_posts/{date_str}-bookmark-{i+1:02d}-{safe_title}.md"
-                
-                # ファイルが既に存在するかチェック
-                if os.path.exists(filename):
-                    logger.info(f"Post already exists, skipping: {filename}")
-                    continue
-                
-                # 記事の公開日時は現在時刻を使用（RSS通知のため）
-                now_jst = datetime.now(self.jst)
-                publish_date_str = now_jst.strftime('%Y-%m-%d %H:%M:%S %z')
-                
-                # エクセルプトは要約の最初の200文字
-                excerpt = summary[:200] + "..." if len(summary) > 200 else summary
-                excerpt = excerpt.replace('"', '\\"')  # YAML用にエスケープ
-                
-                content = f"""---
+        # ファイルが既に存在するかチェック
+        if os.path.exists(filename):
+            logger.info(f"Post already exists, skipping: {filename}")
+            return 0
+        
+        # 記事の公開日時は現在時刻を使用（RSS通知のため）
+        now_jst = datetime.now(self.jst)
+        publish_date_str = now_jst.strftime('%Y-%m-%d %H:%M:%S %z')
+        
+        # 全記事の要約から最初の部分を抜粋
+        first_summary = entries_summaries[0][1] if entries_summaries else ""
+        excerpt = first_summary[:200] + "..." if len(first_summary) > 200 else first_summary
+        excerpt = excerpt.replace('"', '\\"')  # YAML用にエスケープ
+        
+        # 記事数に応じたタイトル
+        article_count = len(entries_summaries)
+        
+        content = f"""---
 layout: post
-title: "{entry['title']}"
+title: "はてなブックマーク {date.strftime('%Y年%m月%d日')} の記事まとめ ({article_count}件)"
 date: {publish_date_str}
 excerpt: "{excerpt}"
 ---
 
 はてなブックマークで気になった記事をAIで要約してお届けします。
+{date.strftime('%Y年%m月%d日')}分の{article_count}件の記事をまとめました。
 
-## 記事情報
+"""
+        
+        # 各記事を追加
+        for i, (entry, summary) in enumerate(entries_summaries, 1):
+            content += f"""## {i}. {entry['title']}
 
-**タイトル:** {entry['title']}  
 **URL:** [{entry['url']}]({entry['url']})
 
-## AI要約
+### AI要約
 
 {summary}
 
 ---
 
-*この記事は、はてなブックマークのRSSフィードから自動生成されました。*  
-*要約はAI（Gemini）によって生成されており、元記事の内容を正確に反映していない場合があります。*  
-*詳細な内容については、上記URLから元記事をご確認ください。*
 """
-                
-                os.makedirs('_posts', exist_ok=True)
-                with open(filename, 'w', encoding='utf-8') as f:
-                    f.write(content)
-                
-                logger.info(f"Created individual blog post: {filename}")
-                created_count += 1
-                
-            except Exception as e:
-                logger.error(f"Error creating individual post for {entry.get('title', 'Unknown')}: {e}")
-                continue
         
-        return created_count
+        # フッター
+        content += """*この記事は、はてなブックマークのRSSフィードから自動生成されました。*  
+*要約はAI（Gemini）によって生成されており、元記事の内容を正確に反映していない場合があります。*  
+*詳細な内容については、各URLから元記事をご確認ください。*
+"""
+        
+        try:
+            os.makedirs('_posts', exist_ok=True)
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            logger.info(f"Created daily blog post: {filename} with {article_count} articles")
+            return 1
+            
+        except Exception as e:
+            logger.error(f"Error creating daily post: {e}")
+            return 0
     
     def run(self):
         """メイン処理を実行"""
@@ -322,14 +323,14 @@ excerpt: "{excerpt}"
                 logger.error(f"Error processing entry {entry.get('title', 'Unknown')}: {e}")
                 continue
         
-        # 個別のMarkdownファイルを作成
+        # 一日分のMarkdownファイルを作成
         yesterday_date = self.get_yesterday_date()
         if entries_summaries:
-            created_count = self.create_individual_markdown_posts(entries_summaries, yesterday_date)
+            created_count = self.create_daily_markdown_post(entries_summaries, yesterday_date)
             if created_count > 0:
-                logger.info(f"Successfully created {created_count} individual blog posts")
+                logger.info(f"Successfully created daily blog post with {len(entries_summaries)} articles")
             else:
-                logger.info("No new blog posts were created (may already exist)")
+                logger.info("No new blog post was created (may already exist)")
         else:
             logger.info("No valid entries to create blog posts")
 
