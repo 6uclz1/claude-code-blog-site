@@ -2,14 +2,12 @@
 layout: post
 title: "はてなブックマーク 2025年08月21日 の記事まとめ (2件)"
 date: 2025-08-22 08:13:54 +0900
-excerpt: "はい、Anthropicの記事「Claude Code and new admin controls for business plans」について、以下の通り要約します。
-
----
-
+excerpt: "
 ### 要点
 
 *   Anthropicは、企業向けプランに開発者支援AI「Claude Code」を導入し、既存のClaudeと統合。
-*   「プレミアムシート」により、開発者はコード生成やリサーチなど、開発..."
+*   「プレミアムシート」により、開発者はコード生成やリサーチなど、開発...
+"
 ---
 
 はてなブックマークで気になった記事をAIで要約してお届けします。

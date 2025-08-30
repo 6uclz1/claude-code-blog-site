@@ -181,6 +181,7 @@ class HatenaBookmarkSummarizer:
 要約の長さは、300文字以上500文字以内にしてください。
 記事の内容が長い場合は、重要なポイントを中心に要約してください。
 要約は読みやすく、興味深い内容にしてください。
+「はい」などの回答は行わず、記事に使用する文章のみを提供してください。
 
 タイトル: {title}
 URL: {url}
@@ -227,12 +228,18 @@ URL: {url}
         
         # 記事数に応じたタイトル
         article_count = len(entries_summaries)
+
+        excerpt = f"はてなブックマークで気になった記事をAIで要約してお届けします。{date.strftime('%Y年%m月%d日')}分の{article_count}件の記事をまとめました。"
+        
+        for i, (entry, summary) in enumerate(entries_summaries, 1):
+            logger.info(f"Entry {i}: {entry['title']} - {entry['url']}")
+            excerpt += f"\n{i}. {entry['title']}"
         
         content = f"""---
 layout: post
 title: "はてなブックマーク {date.strftime('%Y年%m月%d日')} の記事まとめ ({article_count}件)"
 date: {publish_date_str}
-excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。"
+excerpt: "{excerpt}"
 ---
 
 はてなブックマークで気になった記事をAIで要約してお届けします。
@@ -307,6 +314,7 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
                 
                 # 要約を生成
                 summary = self.summarize_with_gemini(title, url, content)
+                
                 
                 entries_summaries.append((
                     {'title': title, 'url': url},
