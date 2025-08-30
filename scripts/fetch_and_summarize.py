@@ -220,13 +220,10 @@ URL: {url}
             return 0
         
         # 記事の公開日時は現在時刻を使用（RSS通知のため）
-        now_jst = datetime.now(self.jst)
-        publish_date_str = now_jst.strftime('%Y-%m-%d %H:%M:%S %z')
-        
-        # 全記事の要約から最初の部分を抜粋
-        first_summary = entries_summaries[0][1] if entries_summaries else ""
-        excerpt = first_summary[:200] + "..." if len(first_summary) > 200 else first_summary
-        excerpt = excerpt.replace('"', '\\"')  # YAML用にエスケープ
+        # ファイル名の日付（引数 date）を公開日時に使い、一貫したパーマリンクを生成する
+        # JST の固定時刻（例: 午前08:15）を設定
+        publish_dt = datetime(date.year, date.month, date.day, 8, 15, 0, tzinfo=self.jst)
+        publish_date_str = publish_dt.strftime('%Y-%m-%d %H:%M:%S %z')
         
         # 記事数に応じたタイトル
         article_count = len(entries_summaries)
@@ -235,7 +232,7 @@ URL: {url}
 layout: post
 title: "はてなブックマーク {date.strftime('%Y年%m月%d日')} の記事まとめ ({article_count}件)"
 date: {publish_date_str}
-excerpt: "{excerpt}"
+excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。"
 ---
 
 はてなブックマークで気になった記事をAIで要約してお届けします。
