@@ -221,10 +221,8 @@ URL: {url}
             return 0
         
         # 記事の公開日時は現在時刻を使用（RSS通知のため）
-        # ファイル名の日付（引数 date）を公開日時に使い、一貫したパーマリンクを生成する
-        # JST の固定時刻（例: 午前08:15）を設定
-        publish_dt = datetime(date.year, date.month, date.day, 8, 15, 0, tzinfo=self.jst)
-        publish_date_str = publish_dt.strftime('%Y-%m-%d %H:%M:%S %z')
+        now_jst = datetime.now(self.jst)
+        publish_date_str = now_jst.strftime('%Y-%m-%d %H:%M:%S %z')
         
         # 記事数に応じたタイトル
         article_count = len(entries_summaries)
