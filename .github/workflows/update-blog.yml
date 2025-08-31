@@ -35,6 +35,8 @@ jobs:
         run: |
           docker compose run --rm python-scripts sh -c "
             pip install -r requirements.txt &&
+            pip install playwright &&
+            playwright install &&
             python scripts/fetch_and_summarize.py
           "
       

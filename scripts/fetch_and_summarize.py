@@ -13,6 +13,8 @@ import re
 import time
 from urllib.parse import urljoin, urlparse
 import logging
+import asyncio
+from playwright.async_api import async_playwright
 
 # ログ設定
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -119,6 +121,15 @@ class HatenaBookmarkSummarizer:
     def extract_article_content(self, url):
         """記事のメイン内容を抽出"""
         try:
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+
+            # x.com / twitter.com の場合は Playwright でスクレイピング
+            if "x.com" in domain or "twitter.com" in domain:
+                logger.info(f"Using Playwright to scrape X.com/Twitter URL: {url}")
+                return asyncio.run(self.extract_x_tweet_content(url))
+
+            # ---- 通常のWebページ処理 (従来どおり) ----
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
@@ -133,7 +144,6 @@ class HatenaBookmarkSummarizer:
             for element in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'advertisement']):
                 element.decompose()
             
-            # メイン内容を抽出する候補セレクタ
             content_selectors = [
                 'article',
                 '[role="main"]',
@@ -152,20 +162,36 @@ class HatenaBookmarkSummarizer:
                     content = elements[0].get_text(strip=True)
                     break
             
-            # セレクタで見つからない場合は、body全体から抽出
             if not content:
                 body = soup.find('body')
                 if body:
                     content = body.get_text(strip=True)
             
-            # 内容をクリーンアップ
             content = re.sub(r'\s+', ' ', content)
-            content = content[:3000]  # 最大3000文字に制限
+            content = content[:3000]
             
             return content if content else "コンテンツを取得できませんでした"
             
         except Exception as e:
             logger.error(f"Error extracting content from {url}: {e}")
+            return "コンテンツの取得に失敗しました"
+
+
+    async def extract_x_tweet_content(self, url: str) -> str:
+        """PlaywrightでX(Twitter)のツイート本文を取得"""
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
+                await page.goto(url, wait_until="networkidle")
+
+                element = await page.wait_for_selector("article div[data-testid='tweetText']")
+                text = await element.inner_text()
+
+                await browser.close()
+                return text.strip()
+        except Exception as e:
+            logger.error(f"Error scraping tweet content from {url}: {e}")
             return "コンテンツの取得に失敗しました"
     
     def summarize_with_gemini(self, title, url, content):
