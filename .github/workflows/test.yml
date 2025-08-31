@@ -23,10 +23,19 @@ jobs:
       - name: Run tests with coverage
         run: |
           docker compose run --rm python-scripts sh -c "
-            pip install -r requirements.txt &&
-            pip install playwright &&
-            python -m playwright install &&
-            python test_runner.py --coverage
+            # 必要なシステムライブラリを先にインストール（Debian/Ubuntu 系）
+            apt-get update && apt-get install -y \
+              ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 libcups2 libdbus-1-3 \
+              libgdk-pixbuf2.0-0 libgtk-3-0 libnspr4 libnss3 libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 \
+              libgbm1 libxss1 wget \
+            && rm -rf /var/lib/apt/lists/* \
+            && pip install -r requirements.txt \
+            # pip が playwright を見つけられないケース対策で pip を最新化（任意）
+            && python -m pip install --upgrade pip setuptools wheel \
+            && pip install playwright \
+            # ブラウザと OS 依存パッケージもまとめてインストール
+            && PLAYWRIGHT_BROWSERS_PATH=/ms-playwright python -m playwright install --with-deps \
+            && python test_runner.py --coverage
           "
       
       - name: Check Jekyll build
