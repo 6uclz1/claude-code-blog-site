@@ -231,7 +231,7 @@ URL: {url}
         
         for i, (entry, summary) in enumerate(entries_summaries, 1):
             logger.info(f"Entry {i}: {entry['title']} - {entry['url']}")
-            excerpt += f"\n{i}. {entry['title']}"
+            excerpt += f"\n- {entry['title']}\n"
         
         content = f"""---
 layout: post
