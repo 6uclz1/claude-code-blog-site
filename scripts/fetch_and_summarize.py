@@ -227,7 +227,7 @@ URL: {url}
         # 記事数に応じたタイトル
         article_count = len(entries_summaries)
 
-        excerpt = f"はてなブックマークで気になった記事をAIで要約してお届けします。{date.strftime('%Y年%m月%d日')}分の{article_count}件の記事をまとめました。"
+        excerpt = f"はてなブックマークで気になった記事をAIで要約してお届けします。{date.strftime('%Y年%m月%d日')}分の{article_count}件の記事をまとめました。\n"
         
         for i, (entry, summary) in enumerate(entries_summaries, 1):
             logger.info(f"Entry {i}: {entry['title']} - {entry['url']}")
