@@ -25,7 +25,7 @@ jobs:
           docker compose run --rm python-scripts sh -c "
             pip install -r requirements.txt &&
             pip install playwright &&
-            playwright install &&
+            python -m playwright install &&
             python test_runner.py --coverage
           "
       
