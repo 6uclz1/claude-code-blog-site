@@ -10,9 +10,10 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 
 - RFC 9457 - Problem Details for HTTP APIs 日本語訳
 
-- GitHub - vrmiguel/pgpad: [Work in progress] A small, fast cross-platform database client
+- GitHub - vrmiguel/pgpad: A small, fast cross-platform database client
 
-- catnose on X: "AIチャットUIを作るときの地味Tips ユーザーの追加メッセージが送信されたとき ①最後の2つのメッセージ（userとassistant）だけ「min-heightがスクリーン高くらい」のボックスの中に入れる ②最下部までスクロール こうするとAIの回答がストリーミングで下に伸びていってもいい感じに表示される https://t.co/5gmy7xNotb"
+- catnose on X: AIチャットUIを作るときの地味Tips
+
 "
 ---
 
