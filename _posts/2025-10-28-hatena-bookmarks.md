@@ -2,19 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年10月28日 の記事まとめ (5件)"
 date: 2025-10-29 08:14:35 +0900
-excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年10月28日分の5件の記事をまとめました。
-
-- Alpha Arena | AI Trading Benchmark
-
-- Sakana AI: 防衛×AIエンジニア勉強会 (2025/11/18 17:00〜)
-
-- RFC 9457 - Problem Details for HTTP APIs 日本語訳
-
-- GitHub - vrmiguel/pgpad: A small, fast cross-platform database client
-
-- catnose on X: AIチャットUIを作るときの地味Tips
-
-"
+excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年10月28日分の5件の記事をまとめました。"
 ---
 
 はてなブックマークで気になった記事をAIで要約してお届けします。
