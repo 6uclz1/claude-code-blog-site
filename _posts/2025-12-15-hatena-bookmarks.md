@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年12月15日 の記事まとめ (2件)"
 date: 2025-12-16 08:15:54 +0900
+permalink: /2025/12/15/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年12月15日分の2件の記事をまとめました。
 
 - GitHub - SanjulaGanepola/github-local-actions: ✨ Run your GitHub Actions locally in VS Code!
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - 日立が越えたコングロマリットディスカウントの壁　デジタルで各事業に横串
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年12月15日分の2件の記事をまとめました。
 

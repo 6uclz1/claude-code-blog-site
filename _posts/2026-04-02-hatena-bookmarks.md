@@ -2,12 +2,12 @@
 layout: post
 title: "はてなブックマーク 2026年04月02日 の記事まとめ (1件)"
 date: 2026-04-03 08:29:29 +0900
+permalink: /2026/04/02/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年04月02日分の1件の記事をまとめました。
 
 - GitHub - lllyasviel/VCC: Compile agent conversations!
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年04月02日分の1件の記事をまとめました。
 

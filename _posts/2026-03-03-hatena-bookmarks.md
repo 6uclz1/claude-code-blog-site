@@ -2,12 +2,12 @@
 layout: post
 title: "はてなブックマーク 2026年03月03日 の記事まとめ (1件)"
 date: 2026-03-04 08:21:10 +0900
+permalink: /2026/03/03/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年03月03日分の1件の記事をまとめました。
 
 - GitHub - flatt-security/setup-takumi-guard-npm: GitHub Action to configure npm with Takumi Guard registry auth via OIDC
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年03月03日分の1件の記事をまとめました。
 

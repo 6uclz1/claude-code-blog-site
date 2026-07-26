@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年09月27日 の記事まとめ (5件)"
 date: 2025-09-28 08:13:08 +0900
+permalink: /2025/09/27/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年09月27日分の5件の記事をまとめました。
 
 - 作曲AIが新時代に突入。SunoがMIDI出力とマルチトラック編集（DAW）に対応、Tuneeは6曲同時生成で一般公開（CloseBox） | テクノエッジ TechnoEdge
@@ -15,7 +16,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - 『GitHub Copilot CLI is now in public preview - GitHub Changelog』へのコメント
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年09月27日分の5件の記事をまとめました。
 

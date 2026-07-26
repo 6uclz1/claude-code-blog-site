@@ -4,9 +4,11 @@
 import unittest
 from unittest.mock import Mock, patch, mock_open, MagicMock
 import os
+import re
 import sys
 from datetime import datetime, date, timedelta
 import pytz
+import yaml
 import tempfile
 import shutil
 
@@ -241,6 +243,73 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
             date_pattern = r'date: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \+\d{4}'
             self.assertRegex(content, date_pattern, "Date format should include current timestamp")
     
+    def test_create_daily_markdown_post_front_matter_is_valid_yaml(self):
+        """タイトルや要約に " や \\ が含まれてもフロントマターが壊れないテスト
+
+        フロントマターが壊れるとJekyllが記事を読み込めず、
+        RSSからその日の記事が消える（タイトルなしの記事が混入する）。
+        """
+        entries_summaries = [
+            ({'title': 'Skillsは"業務マニュアル付きの道具箱"', 'url': 'https://example.com/1'},
+             'AIに "賭ける" 話。' + 'あ' * 100),
+            ({'title': 'パス C:\\Users\\test と : コロン', 'url': 'https://example.com/2'},
+             'バックスラッシュ \\ を含む要約。' + 'い' * 100),
+        ]
+
+        os.makedirs('_posts', exist_ok=True)
+        self.assertEqual(
+            self.summarizer.create_daily_markdown_post(entries_summaries, date(2025, 6, 21)), 1)
+
+        with open('_posts/2025-06-21-hatena-bookmarks.md', encoding='utf-8') as f:
+            content = f.read()
+
+        match = re.match(r'\A---\n(.*?)\n---\n', content, re.S)
+        self.assertIsNotNone(match, "フロントマターが見つからない")
+
+        front_matter = yaml.safe_load(match.group(1))
+        self.assertIsInstance(front_matter, dict)
+        self.assertEqual(front_matter['layout'], 'post')
+        self.assertIn('2025年06月21日', front_matter['title'])
+        self.assertIn('Skillsは"業務マニュアル付きの道具箱"', front_matter['excerpt'])
+        self.assertIn('パス C:\\Users\\test と : コロン', front_matter['excerpt'])
+
+    def test_create_daily_markdown_post_permalink_uses_bookmark_date(self):
+        """パーマリンクがブックマーク日から生成されるテスト
+
+        dateは実行時刻（翌朝）なので、パーマリンクをdate任せにすると
+        ビルド環境のタイムゾーン次第でURLが翌日にずれ、翌日分と衝突する。
+        """
+        entries_summaries = [
+            ({'title': 'Test Article', 'url': 'https://example.com'}, 'Test summary')
+        ]
+
+        os.makedirs('_posts', exist_ok=True)
+        self.summarizer.create_daily_markdown_post(entries_summaries, date(2025, 6, 21))
+
+        with open('_posts/2025-06-21-hatena-bookmarks.md', encoding='utf-8') as f:
+            front_matter = yaml.safe_load(re.match(r'\A---\n(.*?)\n---\n', f.read(), re.S).group(1))
+
+        self.assertEqual(front_matter['permalink'], '/2025/06/21/hatena-bookmarks/')
+
+    def test_create_daily_markdown_post_escapes_liquid_tags(self):
+        """本文中のLiquidタグがエスケープされるテスト"""
+        entries_summaries = [
+            ({'title': 'GitHub Actionsの${{ }}記法', 'url': 'https://example.com'},
+             '`${{ secrets.TOKEN }}` を直接展開しない。{% if %} も同様。')
+        ]
+
+        os.makedirs('_posts', exist_ok=True)
+        self.summarizer.create_daily_markdown_post(entries_summaries, date(2025, 6, 21))
+
+        with open('_posts/2025-06-21-hatena-bookmarks.md', encoding='utf-8') as f:
+            body = f.read().split('\n---\n', 1)[1]
+
+        self.assertIn('{% raw %}{{{% endraw %}', body)
+        self.assertIn('{% raw %}{%{% endraw %}', body)
+        # raw で囲まれていない生の Liquid 開始タグが残っていないこと
+        self.assertIsNone(
+            re.search(r'(?<!\{% raw %\})\{\{(?!\{% endraw %\})', body.replace('{% raw %}{{{% endraw %}', '')))
+
     def test_create_daily_markdown_post_no_entries(self):
         """エントリがない場合のテスト"""
         result = self.summarizer.create_daily_markdown_post([], date(2025, 6, 21))

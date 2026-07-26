@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年09月06日 の記事まとめ (10件)"
 date: 2025-09-07 08:13:53 +0900
+permalink: /2025/09/06/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年09月06日分の10件の記事をまとめました。
 
 - GitHub - siteboon/claudecodeui: Use Claude Code on mobile and web with Claude Code UI. Claude Code UI free open source webui/GUI that helps you manage your Claude Code session and projects remotely
@@ -25,7 +26,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - https://peatix.com/event/4540362/view
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年09月06日分の10件の記事をまとめました。
 

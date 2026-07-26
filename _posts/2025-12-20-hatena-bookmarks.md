@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年12月20日 の記事まとめ (5件)"
 date: 2025-12-21 08:14:28 +0900
+permalink: /2025/12/20/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年12月20日分の5件の記事をまとめました。
 
 - Claude Codeの Agent Skills は設定したほうがいい - じゃあ、おうちで学べる
@@ -15,7 +16,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - TypeScriptのテストにはas const satisfiesが便利です - KAKEHASHI Tech Blog
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年12月20日分の5件の記事をまとめました。
 

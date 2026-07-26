@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年05月20日 の記事まとめ (4件)"
 date: 2026-05-21 09:03:58 +0900
+permalink: /2026/05/20/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年05月20日分の4件の記事をまとめました。
 
 - https://x.com/sebastienlorber/status/2057033638827483236?s=20
@@ -13,7 +14,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Mini Shai-Hulud Hits AntV: 300+ Malicious npm Packages Published via Compromised Maintainer Account | Snyk
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年05月20日分の4件の記事をまとめました。
 

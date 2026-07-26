@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年10月26日 の記事まとめ (2件)"
 date: 2025-10-27 08:13:16 +0900
+permalink: /2025/10/26/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年10月26日分の2件の記事をまとめました。
 
 - Monkeytype | A minimalistic, customizable typing test
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - 『Gemini と NotebookLM を組み合わせて 目標設定の負荷を軽減する方法』というお題で登壇しました - Tbpgr Blog
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年10月26日分の2件の記事をまとめました。
 

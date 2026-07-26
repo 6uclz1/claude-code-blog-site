@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年02月13日 の記事まとめ (2件)"
 date: 2026-02-14 08:25:04 +0900
+permalink: /2026/02/13/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年02月13日分の2件の記事をまとめました。
 
 - GitHub - DataDog/pup: A Go-based command-line wrapper for easy interaction with Datadog APIs. Perfectly fit for an AI agent to use.
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Claude Code Webを10並列で回す！チームみらいの選挙支援ツールを作りながら構築した、超並列LLMコーディングを実現するためのハーネスエンジニアリング｜Jun Ito
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年02月13日分の2件の記事をまとめました。
 

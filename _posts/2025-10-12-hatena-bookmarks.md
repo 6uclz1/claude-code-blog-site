@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年10月12日 の記事まとめ (2件)"
 date: 2025-10-13 08:12:05 +0900
+permalink: /2025/10/12/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年10月12日分の2件の記事をまとめました。
 
 - GitHub - fmalk/terraform-plantuml: Generate PlantUML Images from a Terraform State file
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - 認知負荷を下げるテキストコミュニケーション - ジンジャー研究室
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年10月12日分の2件の記事をまとめました。
 

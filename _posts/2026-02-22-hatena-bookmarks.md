@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年02月22日 の記事まとめ (6件)"
 date: 2026-02-23 08:20:42 +0900
+permalink: /2026/02/22/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年02月22日分の6件の記事をまとめました。
 
 - シニアエンジニアが呼吸するようにやっている「調査 / 切り分けの思考の型」
@@ -17,7 +18,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - GitHub - shaharia-lab/slackcli: Slack CLI - Command-line tool for interacting with Slack workspaces and channels. AI-friendly with structured output formats (JSON, table, text) designed for easy integration with AI tools and automation workflows.
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年02月22日分の6件の記事をまとめました。
 

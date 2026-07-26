@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年11月03日 の記事まとめ (2件)"
 date: 2025-11-04 08:13:44 +0900
+permalink: /2025/11/03/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年11月03日分の2件の記事をまとめました。
 
 - GitHub - public-apis/public-apis: A collective list of free APIs
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - 社内AIヘルプデスク 正答率80%達成 RAG精度改善の軌跡 | BLOG - DeNA Engineering
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年11月03日分の2件の記事をまとめました。
 

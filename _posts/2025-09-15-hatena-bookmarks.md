@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年09月15日 の記事まとめ (8件)"
 date: 2025-09-16 08:13:53 +0900
+permalink: /2025/09/15/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年09月15日分の8件の記事をまとめました。
 
 - ghtkn でローカル開発用に GitHub Access Token をセキュアに生成して PAT から卒業する
@@ -21,7 +22,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - GitHub - ycd/dstp: 🧪 Run common networking tests against any site.
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年09月15日分の8件の記事をまとめました。
 

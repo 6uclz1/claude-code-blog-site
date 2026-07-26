@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年04月20日 の記事まとめ (3件)"
 date: 2026-04-21 08:37:58 +0900
+permalink: /2026/04/20/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年04月20日分の3件の記事をまとめました。
 
 - GitHub - NousResearch/hermes-agent: The agent that grows with you
@@ -11,7 +12,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Vercel April 2026 security incident | Vercel Knowledge Base
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年04月20日分の3件の記事をまとめました。
 

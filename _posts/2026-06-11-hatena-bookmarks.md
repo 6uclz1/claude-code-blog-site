@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年06月11日 の記事まとめ (3件)"
 date: 2026-06-12 09:16:35 +0900
+permalink: /2026/06/11/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年06月11日分の3件の記事をまとめました。
 
 - GitHub - shadcn/improve: Use your most capable model to audit your codebase and write plans for cheaper models to execute.
@@ -11,7 +12,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Rebuild: 427: Tokenmaxxing (twada)
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年06月11日分の3件の記事をまとめました。
 

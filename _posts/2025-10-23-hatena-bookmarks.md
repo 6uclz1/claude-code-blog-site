@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年10月23日 の記事まとめ (2件)"
 date: 2025-10-24 08:13:24 +0900
+permalink: /2025/10/23/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年10月23日分の2件の記事をまとめました。
 
 - Summary of the Amazon DynamoDB Service Disruption in Northern Virginia (US-EAST-1) Region
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Fastly Yamagoya Night (2025/10/29 18:00〜)
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年10月23日分の2件の記事をまとめました。
 

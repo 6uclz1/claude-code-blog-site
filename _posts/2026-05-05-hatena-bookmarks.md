@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年05月05日 の記事まとめ (2件)"
 date: 2026-05-06 08:42:26 +0900
+permalink: /2026/05/05/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年05月05日分の2件の記事をまとめました。
 
 - 【2026年版】AITuber開発者向けローカルTTS 10選！手元で動かせるオープンウェイト音声エンジンまとめ｜AITuber OnAir
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - OpenAI Codex Masterclass — Vaibhav Srivastav & Katia Gil Guzman
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年05月05日分の2件の記事をまとめました。
 

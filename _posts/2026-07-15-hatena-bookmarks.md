@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年07月15日 の記事まとめ (4件)"
 date: 2026-07-16 08:53:49 +0900
+permalink: /2026/07/15/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年07月15日分の4件の記事をまとめました。
 
 - GitHub - cathrynlavery/diagram-design: Thirteen editorial diagram types for Claude Code. Self-contained HTML + SVG. No shadows, no Mermaid-slop.
@@ -13,7 +14,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - GitHub - coji/natural-japanese: 仕事の日本語文書を読みやすくわかりやすく書く・直す Agent Skill。議事録・調査レポート・社内ガイド・リサーチメモ・スライド構成に対応し、AI臭さの除去も工程に含む。sudachipy 形態素解析による機械検出付き。
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年07月15日分の4件の記事をまとめました。
 

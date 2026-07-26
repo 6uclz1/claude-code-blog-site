@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年09月16日 の記事まとめ (2件)"
 date: 2025-09-17 08:11:02 +0900
+permalink: /2025/09/16/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年09月16日分の2件の記事をまとめました。
 
 - GitHub - k1LoW/tbls: tbls is a CI-Friendly tool to document a database, written in Go.
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - リモートワークするなら「サボってると思われてる」を前提に動け｜すてぃお
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年09月16日分の2件の記事をまとめました。
 

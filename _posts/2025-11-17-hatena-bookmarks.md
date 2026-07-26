@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年11月17日 の記事まとめ (7件)"
 date: 2025-11-18 08:15:37 +0900
+permalink: /2025/11/17/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年11月17日分の7件の記事をまとめました。
 
 - https://2025.agilejapan.jp/wp-content/uploads/2025/11/1114_1300-1320_MSOL_AgileJapan2025_%E7%99%BB%E5%A3%87%E8%B3%87%E6%96%99_%E6%8F%90%E5%87%BA%E7%89%88.pdf
@@ -19,7 +20,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Release misaka26 - 1.0 HIGH RISK Unstable · straight-tamago/misaka26
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年11月17日分の7件の記事をまとめました。
 

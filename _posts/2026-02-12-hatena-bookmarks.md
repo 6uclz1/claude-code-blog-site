@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年02月12日 の記事まとめ (3件)"
 date: 2026-02-13 08:23:22 +0900
+permalink: /2026/02/12/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年02月12日分の3件の記事をまとめました。
 
 - GitHub - maralorn/nix-output-monitor: Pipe your nix-build output through the nix-output-monitor a.k.a nom to get additional information while building.
@@ -11,7 +12,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - AIがやねうら王をC#に移植してしまった件 | やねうら王 公式サイトやねうら王 公式サイト
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年02月12日分の3件の記事をまとめました。
 

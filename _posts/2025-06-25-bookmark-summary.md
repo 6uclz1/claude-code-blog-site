@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク記事まとめ - 2025年06月25日"
 date: 2025-06-26 08:14:27 +0900
+permalink: /2025/06/25/bookmark-summary/
 excerpt: "これらの記事は、GoogleのAIモデル「Gemini」が開発者支援（Gemini CLI）やロボットの自律動作（Gemini Robotics On-Device）を革新していること、そして開発環境のセキュリティを強化するツール（VSCan）の登場といった、テクノロジー分野におけるAIとツー...
 
 - [悪意のあるVSCode拡張機能を検出できる「VSCan」](https://gigazine.net/news/20250625-vscan/)
@@ -14,7 +15,6 @@ excerpt: "これらの記事は、GoogleのAIモデル「Gemini」が開発者�
 
 "
 ---
-
 昨日のはてなブックマークから気になった記事をAIで要約してお届けします。
 
 

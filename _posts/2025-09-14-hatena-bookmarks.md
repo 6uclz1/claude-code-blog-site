@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年09月14日 の記事まとめ (5件)"
 date: 2025-09-15 08:13:43 +0900
+permalink: /2025/09/14/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年09月14日分の5件の記事をまとめました。
 
 - Azure Live Interpreter API の発表 ー リアルタイム自動翻訳をすぐに組み込める｜daka | Microsoft | AI
@@ -15,7 +16,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - The second wave of MCP: Building for LLMs, not developers - Vercel
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年09月14日分の5件の記事をまとめました。
 

@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年02月23日 の記事まとめ (9件)"
 date: 2026-02-24 08:32:09 +0900
+permalink: /2026/02/23/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年02月23日分の9件の記事をまとめました。
 
 - AIの身体を作る話｜6uclz1
@@ -23,7 +24,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - GitHub - RaphGL/Tuckr: Super powered replacement for GNU Stow
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年02月23日分の9件の記事をまとめました。
 

@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク記事まとめ - 2025年06月23日"
 date: 2025-06-23 09:00:00 +0900
+permalink: /2025/06/23/bookmark-summary/
 excerpt: "これらの記事は、Reactの最新技術や開発ツール、AIエージェントの効率的な活用法、そして企業における「捨てる会議」を通じた非効率の排除といった多様な側面から、IT分野における「効率化」と「変化への適応」という共通のテーマを扱っています。
 
 - [来たるべき 8.0 に備えて React 19 新機能と React Router 固有機能の取捨選択とすり合わせを考える](https://speakerdeck.com/oukayuka/lai-tarubeki-8-dot-0-nibei-ete-react-19-xin-ji-neng-to-react-router-gu-you-ji-neng-noqu-she-xuan-ze-tosurihe-wasewokao-eru)
@@ -17,7 +18,6 @@ excerpt: "これらの記事は、Reactの最新技術や開発ツール、AIエ
 
 "
 ---
-
 昨日のはてなブックマークから気になった記事をAIで要約してお届けします。
 
 

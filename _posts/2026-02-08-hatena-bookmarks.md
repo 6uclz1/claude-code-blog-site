@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年02月08日 の記事まとめ (5件)"
 date: 2026-02-09 08:25:04 +0900
+permalink: /2026/02/08/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年02月08日分の5件の記事をまとめました。
 
 - Typeless | AI Voice Dictation That's Actually Intelligent
@@ -15,7 +16,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Claude Opus4.6はどのようにPPTXを生成しているか
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年02月08日分の5件の記事をまとめました。
 

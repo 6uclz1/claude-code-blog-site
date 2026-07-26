@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年06月06日 の記事まとめ (2件)"
 date: 2026-06-07 08:59:04 +0900
+permalink: /2026/06/06/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年06月06日分の2件の記事をまとめました。
 
 - GitHub - microsoft/pg_durable: PostgreSQL in-database durable execution
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - CVE-2026-49975「HTTP/2 Bomb」をわかりやすく解説——AIが人間より先に気づいた脆弱性 - Qiita
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年06月06日分の2件の記事をまとめました。
 

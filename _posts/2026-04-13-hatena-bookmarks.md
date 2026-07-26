@@ -2,12 +2,12 @@
 layout: post
 title: "はてなブックマーク 2026年04月13日 の記事まとめ (1件)"
 date: 2026-04-14 08:37:10 +0900
+permalink: /2026/04/13/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年04月13日分の1件の記事をまとめました。
 
 - Harnessing Claude's Intelligence | 3 Key Patterns for Building Apps | Claude
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年04月13日分の1件の記事をまとめました。
 

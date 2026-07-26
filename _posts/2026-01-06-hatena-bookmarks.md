@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年01月06日 の記事まとめ (3件)"
 date: 2026-01-07 08:15:51 +0900
+permalink: /2026/01/06/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年01月06日分の3件の記事をまとめました。
 
 - https://pc.watch.impress.co.jp/docs/news/event/2075436.html
@@ -11,7 +12,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Claude CodeのSlash Commandsで日報を作成する - じゃあ、おうちで学べる
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年01月06日分の3件の記事をまとめました。
 

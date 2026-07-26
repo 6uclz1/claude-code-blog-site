@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年05月23日 の記事まとめ (5件)"
 date: 2026-05-24 08:53:46 +0900
+permalink: /2026/05/23/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年05月23日分の5件の記事をまとめました。
 
 - GitHub - charlesvestal/schwung: An open framework for additional synths, FX and tools for the Ableton Move
@@ -15,7 +16,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - tufte-viz Claude Code skill — Edward Tufte data visualization principles
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年05月23日分の5件の記事をまとめました。
 
