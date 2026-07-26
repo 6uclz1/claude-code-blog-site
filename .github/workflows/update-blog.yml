@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
   pages: write
   id-token: write
 
@@ -16,19 +17,19 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       - name: Build Docker services
         run: docker compose build
-      
+
       - name: Run fetch and summarize script in Docker
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -37,12 +38,7 @@ jobs:
             pip install -r requirements.txt &&
             python scripts/fetch_and_summarize.py
           "
-      
-      - name: Configure Git
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-      
+
       - name: Check for changes
         id: verify-changed-files
         run: |
@@ -51,31 +47,94 @@ jobs:
           else
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
-      
+
+      # ここから公開前ゲート: 検証を通らなかったものはコミットもデプロイもしない
+      - name: Run tests
+        if: steps.verify-changed-files.outputs.changed == 'true'
+        run: |
+          docker compose run --rm python-scripts sh -c "
+            pip install -r requirements.txt &&
+            python test_runner.py
+          "
+
+      - name: Build Jekyll site
+        if: steps.verify-changed-files.outputs.changed == 'true'
+        run: |
+          docker compose run --rm -e JEKYLL_ENV=production jekyll sh -c "
+            bundle install &&
+            bundle exec jekyll build > /app/build.log 2>&1
+            code=\$?
+            cat /app/build.log
+            exit \$code
+          "
+
+      # Jekyll は URL衝突 や Liquid警告 を出しても exit 0 を返すため、
+      # ビルドログと feed.xml を検査してから公開する
+      - name: Validate build output
+        if: steps.verify-changed-files.outputs.changed == 'true'
+        run: python3 scripts/validate_build.py --log build.log --feed _site/feed.xml --min-entries 1
+
+      - name: Upload build output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-build
+          path: |
+            build.log
+            _posts/
+          if-no-files-found: ignore
+
+      # 検証を通ったのでコミットして公開する
+      - name: Configure Git
+        if: steps.verify-changed-files.outputs.changed == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
       - name: Commit and push changes
         if: steps.verify-changed-files.outputs.changed == 'true'
         run: |
           git add _posts/
           git commit -m "自動更新: はてなブックマークから記事を要約して追加 $(date '+%Y-%m-%d %H:%M:%S')"
           git push
-      
-      - name: Build Jekyll site with Docker
-        if: steps.verify-changed-files.outputs.changed == 'true'
-        run: |
-          docker build -f Dockerfile.production -t jekyll-site .
-          docker run --rm -v $PWD/_site:/output jekyll-site sh -c "cp -r /usr/share/nginx/html/* /output/"
-      
+
       - name: Setup Pages
         if: steps.verify-changed-files.outputs.changed == 'true'
         uses: actions/configure-pages@v5
-      
+
+      # 検証したものと同じ成果物をそのまま公開する
       - name: Upload artifact
         if: steps.verify-changed-files.outputs.changed == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: './_site'
-      
+
       - name: Deploy to GitHub Pages
         if: steps.verify-changed-files.outputs.changed == 'true'
         id: deployment
         uses: actions/deploy-pages@v4
+
+      # 無人運用なので、失敗したら気づけるように自動でissueを立てる
+      - name: Report failure as issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create automation-failure --color B60205 \
+            --description "自動更新ワークフローの失敗" 2>/dev/null || true
+
+          body="自動更新ワークフローが失敗しました。検証を通らなかったため、記事のコミットと公開は行われていません。
+
+          - 実行ログ: ${RUN_URL}
+          - 生成物は artifact \`failed-build\` に保存されています
+
+          再実行する場合は Actions から \`Update Blog with Hatena Bookmarks\` を workflow_dispatch してください。"
+
+          existing=$(gh issue list --label automation-failure --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "自動更新ワークフローが失敗しました" \
+              --label automation-failure --body "$body"
+          fi
