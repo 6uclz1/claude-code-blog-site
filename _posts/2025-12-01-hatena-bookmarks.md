@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年12月01日 の記事まとめ (15件)"
 date: 2025-12-02 08:17:18 +0900
+permalink: /2025/12/01/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年12月01日分の15件の記事をまとめました。
 
 - claude-code/plugins/frontend-design/skills/frontend-design/SKILL.md at main · anthropics/claude-code
@@ -35,7 +36,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Auth.jsを引き継いだBetter Authについて、調べてみたぜ
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年12月01日分の15件の記事をまとめました。
 

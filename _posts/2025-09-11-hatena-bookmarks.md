@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年09月11日 の記事まとめ (4件)"
 date: 2025-09-12 08:13:26 +0900
+permalink: /2025/09/11/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年09月11日分の4件の記事をまとめました。
 
 - https://www.digital.go.jp/assets/contents/node/information/field_ref_resources/08ded405-ca03-48c7-9b92-6b8878854a74/5147384f/20250829_news_ai_usage_report_01.pdf
@@ -13,7 +14,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - GitHub ActionsのSHA Pinning Enforcementを有効にするまでの道のり
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年09月11日分の4件の記事をまとめました。
 

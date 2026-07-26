@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年08月31日 の記事まとめ (3件)"
 date: 2025-09-01 08:13:14 +0900
+permalink: /2025/08/31/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年08月31日分の3件の記事をまとめました。
 
 - From Dariacore to Hyperflip - Evolving An Internet Movement
@@ -11,7 +12,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - WSL2でpingは通るのにcurlやwget, aptが通らないときに `netsh winsock reset` で復旧した記録 - Qiita
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年08月31日分の3件の記事をまとめました。
 

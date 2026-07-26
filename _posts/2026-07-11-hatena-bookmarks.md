@@ -1,29 +1,39 @@
 ---
 layout: post
-title: "はてなブックマーク 2026年07月11日 の記事まとめ (9件)"
+title: はてなブックマーク 2026年07月11日 の記事まとめ (9件)
 date: 2026-07-12 08:49:05 +0900
-excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年07月11日分の9件の記事をまとめました。
+permalink: /2026/07/11/hatena-bookmarks/
+excerpt: 'はてなブックマークで気になった記事をAIで要約してお届けします。2026年07月11日分の9件の記事をまとめました。
 
-- Agent Skills自動最適化の研究、中身はほぼ深層学習の訓練ループだった
 
-- AI時代のナレッジ管理手法 - Googleの「OKF」を解説
+  - Agent Skills自動最適化の研究、中身はほぼ深層学習の訓練ループだった
 
-- https://x.com/t_wada/status/2075500925704425606?s=20
 
-- AIに "賭ける": LayerX の AI エージェント基盤と活用最前線 / Building an AI Agent Platform at LayerX
+  - AI時代のナレッジ管理手法 - Googleの「OKF」を解説
 
-- 型は壁、Rustでもバグを直すな、表現できなくせよ
 
-- Prompting | ChatGPT Learn
+  - https://x.com/t_wada/status/2075500925704425606?s=20
 
-- 純関数・参照透過性・冪等性の違いが分からなくなったのでまとめる
 
-- Generation-then-comprehension - kawasima
+  - AIに "賭ける": LayerX の AI エージェント基盤と活用最前線 / Building an AI Agent Platform at LayerX
 
-- SREの積み重ねがAI駆動開発のガードレールになった ― 7つの実践/SRE Guardrails The 7
-"
+
+  - 型は壁、Rustでもバグを直すな、表現できなくせよ
+
+
+  - Prompting | ChatGPT Learn
+
+
+  - 純関数・参照透過性・冪等性の違いが分からなくなったのでまとめる
+
+
+  - Generation-then-comprehension - kawasima
+
+
+  - SREの積み重ねがAI駆動開発のガードレールになった ― 7つの実践/SRE Guardrails The 7
+
+  '
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年07月11日分の9件の記事をまとめました。
 

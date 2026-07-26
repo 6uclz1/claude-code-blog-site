@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年04月29日 の記事まとめ (4件)"
 date: 2026-04-30 08:49:32 +0900
+permalink: /2026/04/29/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年04月29日分の4件の記事をまとめました。
 
 - Claude の Blender Connector の使い方｜npaka
@@ -13,7 +14,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Ghostty Is Leaving GitHub
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年04月29日分の4件の記事をまとめました。
 

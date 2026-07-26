@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年05月26日 の記事まとめ (5件)"
 date: 2026-05-27 09:00:57 +0900
+permalink: /2026/05/26/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年05月26日分の5件の記事をまとめました。
 
 - ソフトウェアサプライチェーン診断 | GMO Flatt Security株式会社
@@ -15,7 +16,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - feat: Phase 1 of `allowScripts` opt-in install-script policy by JamieMagee · Pull Request #9360 · npm/cli
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年05月26日分の5件の記事をまとめました。
 

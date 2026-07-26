@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年01月15日 の記事まとめ (8件)"
 date: 2026-01-16 08:17:11 +0900
+permalink: /2026/01/15/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年01月15日分の8件の記事をまとめました。
 
 - crater/browser at main · mizchi/crater
@@ -21,7 +22,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - GitHub - nyanko3141592/ccperm: A TUI viewer/editor for Claude Code permission settings
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年01月15日分の8件の記事をまとめました。
 

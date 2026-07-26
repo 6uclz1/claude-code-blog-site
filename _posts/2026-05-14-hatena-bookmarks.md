@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年05月14日 の記事まとめ (9件)"
 date: 2026-05-15 08:54:09 +0900
+permalink: /2026/05/14/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年05月14日分の9件の記事をまとめました。
 
 - GitHub - kyegomez/OpenMythos: A theoretical reconstruction of the Claude Mythos architecture, built from first principles using the available research literature.
@@ -23,7 +24,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Notion CLI - Notion Docs
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年05月14日分の9件の記事をまとめました。
 

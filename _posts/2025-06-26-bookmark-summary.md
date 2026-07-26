@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク記事まとめ - 2025年06月26日"
 date: 2025-06-27 08:15:24 +0900
+permalink: /2025/06/26/bookmark-summary/
 excerpt: "これらの記事は、AIツール（`gemini-cli`、`claude-code`）の進化と実用的なCLI活用が共通テーマで、機能強化（ウェブ検索連携など）やリッチUI実現技術（React Ink）が注目される一方で、データプライバシーや技術的負債といったAI利用に伴う運用上の課題も議論されています。
 
 - [gemini-cli の google_web_search が最高](https://zenn.dev/mizchi/articles/gemini-cli-for-google-search)
@@ -29,7 +30,6 @@ excerpt: "これらの記事は、AIツール（`gemini-cli`、`claude-code`）�
 
 "
 ---
-
 昨日のはてなブックマークから気になった記事をAIで要約してお届けします。
 
 

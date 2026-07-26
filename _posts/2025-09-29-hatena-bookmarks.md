@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年09月29日 の記事まとめ (4件)"
 date: 2025-09-30 08:13:56 +0900
+permalink: /2025/09/29/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年09月29日分の4件の記事をまとめました。
 
 - https://x.com/iwashi86/status/1971791112936489409
@@ -13,7 +14,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - GitHub - ChromeDevTools/chrome-devtools-mcp: Chrome DevTools for coding agents
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年09月29日分の4件の記事をまとめました。
 

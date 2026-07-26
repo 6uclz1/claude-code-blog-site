@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年06月19日 の記事まとめ (6件)"
 date: 2026-06-20 09:04:46 +0900
+permalink: /2026/06/19/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年06月19日分の6件の記事をまとめました。
 
 - AI-DLC Workflows 2.0�のご紹介 / Intro of AI-DLC Workflows2.0
@@ -17,7 +18,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Claude Code now supports artifacts | Claude
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年06月19日分の6件の記事をまとめました。
 

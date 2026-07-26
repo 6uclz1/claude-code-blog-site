@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年02月14日 の記事まとめ (2件)"
 date: 2026-02-15 08:18:24 +0900
+permalink: /2026/02/14/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年02月14日分の2件の記事をまとめました。
 
 - GitHub - remorses/zele: Gmail CLI, manage emails & calendar from your terminal
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - TUIでPR diffを見ながら裏でAIが勝手に修正&レビューをし続けるRust製tool「octorus」
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年02月14日分の2件の記事をまとめました。
 

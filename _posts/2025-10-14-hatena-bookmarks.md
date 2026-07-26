@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年10月14日 の記事まとめ (2件)"
 date: 2025-10-15 08:13:20 +0900
+permalink: /2025/10/14/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年10月14日分の2件の記事をまとめました。
 
 - Remix 3 発表まとめ - React を捨て、Web標準で新しい世界へ
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - GitHub - Decathlon/dblinter: A static analysis tool for postgresql databases
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年10月14日分の2件の記事をまとめました。
 

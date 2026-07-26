@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年01月10日 の記事まとめ (6件)"
 date: 2026-01-11 08:15:23 +0900
+permalink: /2026/01/10/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年01月10日分の6件の記事をまとめました。
 
 - claude-code/plugins at main · anthropics/claude-code
@@ -17,7 +18,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Burikaigi 2026で「チームで安全にClaude Codeを利用するためのプラクティス」というタイトルで登壇しました！ #burikaigi | DevelopersIO
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年01月10日分の6件の記事をまとめました。
 

@@ -1,29 +1,39 @@
 ---
 layout: post
-title: "はてなブックマーク 2026年06月09日 の記事まとめ (9件)"
+title: はてなブックマーク 2026年06月09日 の記事まとめ (9件)
 date: 2026-06-10 09:07:49 +0900
-excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年06月09日分の9件の記事をまとめました。
+permalink: /2026/06/09/hatena-bookmarks/
+excerpt: 'はてなブックマークで気になった記事をAIで要約してお届けします。2026年06月09日分の9件の記事をまとめました。
 
-- 価格.comをAI駆動で全面刷新する ー 30年分の技術的負債を返し、次の30年の土台をつくる ー
 
-- 実装は速くなった、レビューはどうする？ ― 自身のレビューをAIで再現させるサーヴァントエンジニアリングのすゝめ / Implementation got faster. So what about reviews? — An invitation to Servant Engineering: Recreating your own code reviews with AI
+  - 価格.comをAI駆動で全面刷新する ー 30年分の技術的負債を返し、次の30年の土台をつくる ー
 
-- 「気づいたら仕事が終わっている」バクラクAIエージェント本番運用の裏側 / layerx-bakuraku-aie2026
 
-- 設計資料をHTMLで回す — 生成・レビュー・社内共有のワークフロー
+  - 実装は速くなった、レビューはどうする？ ― 自身のレビューをAIで再現させるサーヴァントエンジニアリングのすゝめ / Implementation got faster. So what about reviews? — An invitation to Servant Engineering: Recreating your own code reviews with AI
 
-- Loop Engineering
 
-- AIネイティブ時代の設計書を考える | フューチャー技術ブログ
+  - 「気づいたら仕事が終わっている」バクラクAIエージェント本番運用の裏側 / layerx-bakuraku-aie2026
 
-- 官能小説用SKILL.md "spicy_novel_jp" を公開します！ ～喘ぎ声スキルもあるでよ～｜カガミカミ水鏡👯
 
-- Ubuntu、サンドボックス化された開発環境をコマンド一発で構築。新機能「Workshop」リリース
+  - 設計資料をHTMLで回す — 生成・レビュー・社内共有のワークフロー
 
-- Tokyo — Code w/ Claude 2026
-"
+
+  - Loop Engineering
+
+
+  - AIネイティブ時代の設計書を考える | フューチャー技術ブログ
+
+
+  - 官能小説用SKILL.md "spicy_novel_jp" を公開します！ ～喘ぎ声スキルもあるでよ～｜カガミカミ水鏡👯
+
+
+  - Ubuntu、サンドボックス化された開発環境をコマンド一発で構築。新機能「Workshop」リリース
+
+
+  - Tokyo — Code w/ Claude 2026
+
+  '
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年06月09日分の9件の記事をまとめました。
 

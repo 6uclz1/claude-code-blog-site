@@ -2,12 +2,12 @@
 layout: post
 title: "はてなブックマーク 2025年12月27日 の記事まとめ (1件)"
 date: 2025-12-28 08:14:58 +0900
+permalink: /2025/12/27/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年12月27日分の1件の記事をまとめました。
 
 - AWS Databases coming to the Vercel Marketplace - Vercel
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年12月27日分の1件の記事をまとめました。
 

@@ -2,12 +2,12 @@
 layout: post
 title: "はてなブックマーク 2026年07月13日 の記事まとめ (1件)"
 date: 2026-07-14 08:47:20 +0900
+permalink: /2026/07/13/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年07月13日分の1件の記事をまとめました。
 
 - https://www.marubeni.com/jp/research/report/data/20260709_matsuo_Priceripple.pdf
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年07月13日分の1件の記事をまとめました。
 

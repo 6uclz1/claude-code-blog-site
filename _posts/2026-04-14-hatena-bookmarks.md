@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年04月14日 の記事まとめ (2件)"
 date: 2026-04-15 08:37:46 +0900
+permalink: /2026/04/14/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年04月14日分の2件の記事をまとめました。
 
 - GitHub - aws/aws-lambda-web-adapter: Run web applications on AWS Lambda
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - GitHub Stacked PRs
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年04月14日分の2件の記事をまとめました。
 

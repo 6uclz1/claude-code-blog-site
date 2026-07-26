@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年12月06日 の記事まとめ (2件)"
 date: 2025-12-07 08:14:01 +0900
+permalink: /2025/12/06/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年12月06日分の2件の記事をまとめました。
 
 - GitHub - TobikoData/sqlmesh: Scalable and efficient data transformation framework - backwards compatible with dbt.
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - CVE-2025-55182を調査する会
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年12月06日分の2件の記事をまとめました。
 

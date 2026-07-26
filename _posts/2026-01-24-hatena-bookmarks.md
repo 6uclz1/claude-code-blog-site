@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年01月24日 の記事まとめ (2件)"
 date: 2026-01-25 08:15:22 +0900
+permalink: /2026/01/24/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年01月24日分の2件の記事をまとめました。
 
 - Best Practices for Claude Code - Claude Code Docs
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - 速報！Playwright CLIがでた！ - Qiita
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年01月24日分の2件の記事をまとめました。
 

@@ -2,12 +2,12 @@
 layout: post
 title: "はてなブックマーク 2025年11月13日 の記事まとめ (1件)"
 date: 2025-11-14 08:14:10 +0900
+permalink: /2025/11/13/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年11月13日分の1件の記事をまとめました。
 
 - Application loadbalancer support client credential flow with JWT verification - AWS
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年11月13日分の1件の記事をまとめました。
 

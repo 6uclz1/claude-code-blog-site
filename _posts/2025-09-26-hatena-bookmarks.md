@@ -2,12 +2,12 @@
 layout: post
 title: "はてなブックマーク 2025年09月26日 の記事まとめ (1件)"
 date: 2025-09-27 08:13:06 +0900
+permalink: /2025/09/26/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年09月26日分の1件の記事をまとめました。
 
 - Announcing Cloudflare Email Service’s private beta
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年09月26日分の1件の記事をまとめました。
 

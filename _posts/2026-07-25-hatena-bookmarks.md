@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年07月25日 の記事まとめ (9件)"
 date: 2026-07-26 08:56:15 +0900
+permalink: /2026/07/25/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年07月25日分の9件の記事をまとめました。
 
 - HTML-in-Canvas コンポーネントライブラリ Canvas UI
@@ -23,7 +24,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - https://www.anthropic.com/news/claude-opus-5
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年07月25日分の9件の記事をまとめました。
 

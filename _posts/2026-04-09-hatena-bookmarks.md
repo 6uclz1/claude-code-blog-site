@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年04月09日 の記事まとめ (4件)"
 date: 2026-04-10 08:34:23 +0900
+permalink: /2026/04/09/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年04月09日分の4件の記事をまとめました。
 
 - Scaling Managed Agents: Decoupling the brain from the hands
@@ -13,7 +14,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - 『AI時代のソフトウェア開発を考える』｜t-wadaさんご講演とWHI開発セッションの様子をお届け！｜WHI Developers Blog
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年04月09日分の4件の記事をまとめました。
 

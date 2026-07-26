@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年12月03日 の記事まとめ (3件)"
 date: 2025-12-04 08:13:19 +0900
+permalink: /2025/12/03/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年12月03日分の3件の記事をまとめました。
 
 - パッケージマネージャーで Runtime のバージョンを管理する
@@ -11,7 +12,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - GitHub - AhmetCanArslan/ShizuWall: Lightweight no root, no vpn firewall solution powered by Shizuku
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年12月03日分の3件の記事をまとめました。
 

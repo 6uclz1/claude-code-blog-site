@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年04月17日 の記事まとめ (5件)"
 date: 2026-04-18 08:34:29 +0900
+permalink: /2026/04/17/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年04月17日分の5件の記事をまとめました。
 
 - chezmoi-dotfiles/dot_claude/CLAUDE.md.tmpl at main · mizchi/chezmoi-dotfiles
@@ -15,7 +16,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Manage agent skills with GitHub CLI - GitHub Changelog
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年04月17日分の5件の記事をまとめました。
 

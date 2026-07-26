@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年06月13日 の記事まとめ (6件)"
 date: 2026-06-14 09:01:51 +0900
+permalink: /2026/06/13/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年06月13日分の6件の記事をまとめました。
 
 - DatadogとAWSが同じ日に出した“Opsエージェント”は、何を奪い合っているのか
@@ -17,7 +18,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - 400+ AUR Packages Compromised with Infostealer and Rootkit
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年06月13日分の6件の記事をまとめました。
 

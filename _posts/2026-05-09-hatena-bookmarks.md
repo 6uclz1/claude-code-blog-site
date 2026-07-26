@@ -2,12 +2,12 @@
 layout: post
 title: "はてなブックマーク 2026年05月09日 の記事まとめ (1件)"
 date: 2026-05-10 08:40:49 +0900
+permalink: /2026/05/09/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年05月09日分の1件の記事をまとめました。
 
 - The unreasonable effectiveness of HTML — examples
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年05月09日分の1件の記事をまとめました。
 

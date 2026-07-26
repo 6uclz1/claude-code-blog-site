@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年07月11日 の記事まとめ (1件)"
 date: 2025-07-12 08:14:28 +0900
+permalink: /2025/07/11/hatena-bookmarks/
 excerpt: "**要点**
 
 *   「TOKYO KEYBOARD EXPO」は、日本最大級のPCキーボード展示・販売イベントです。
@@ -12,7 +13,6 @@ excerpt: "**要点**
 
 「TOKYO KEYBOARD..."
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年07月11日分の1件の記事をまとめました。
 

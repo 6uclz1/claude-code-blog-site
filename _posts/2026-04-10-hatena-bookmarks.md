@@ -2,12 +2,12 @@
 layout: post
 title: "はてなブックマーク 2026年04月10日 の記事まとめ (1件)"
 date: 2026-04-11 08:29:45 +0900
+permalink: /2026/04/10/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年04月10日分の1件の記事をまとめました。
 
 - GitHub - palantir/policy-bot: A GitHub App that enforces approval policies on pull requests
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年04月10日分の1件の記事をまとめました。
 

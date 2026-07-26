@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年04月30日 の記事まとめ (2件)"
 date: 2026-05-01 08:45:33 +0900
+permalink: /2026/04/30/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年04月30日分の2件の記事をまとめました。
 
 - Copy Fail: Public PoC and Full Details Disclosed for the 732-Byte Linux Root Exploit (CVE-2026-31431)
@@ -9,7 +10,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Claude Code に仕事を譲った日——残ったのは「判断」と「責任」だった
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年04月30日分の2件の記事をまとめました。
 

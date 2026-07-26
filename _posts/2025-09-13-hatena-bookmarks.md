@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年09月13日 の記事まとめ (4件)"
 date: 2025-09-14 08:12:33 +0900
+permalink: /2025/09/13/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年09月13日分の4件の記事をまとめました。
 
 - コミュニケーションの良書　仕事や人生の人間関係が楽になる11冊
@@ -13,7 +14,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - GitHub - QwenLM/qwen-code: qwen-code is a coding agent that lives in digital world.
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年09月13日分の4件の記事をまとめました。
 

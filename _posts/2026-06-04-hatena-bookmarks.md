@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年06月04日 の記事まとめ (3件)"
 date: 2026-06-05 09:01:32 +0900
+permalink: /2026/06/04/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年06月04日分の3件の記事をまとめました。
 
 - Extensions SDK
@@ -11,7 +12,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Hermes Desktop — The Agent That Grows With You
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年06月04日分の3件の記事をまとめました。
 

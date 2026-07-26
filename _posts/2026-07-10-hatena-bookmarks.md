@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年07月10日 の記事まとめ (5件)"
 date: 2026-07-11 08:54:35 +0900
+permalink: /2026/07/10/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年07月10日分の5件の記事をまとめました。
 
 - Claude Codeとハーネスについて考えてみる
@@ -15,7 +16,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Orca — The Worktree IDE for Claude Code, Ghostty & AI Coding Agents
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年07月10日分の5件の記事をまとめました。
 

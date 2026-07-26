@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年02月04日 の記事まとめ (3件)"
 date: 2026-02-05 08:21:43 +0900
+permalink: /2026/02/04/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年02月04日分の3件の記事をまとめました。
 
 - GitHub - Producdevity/gamehub-lite: GameHub Lite is a community-maintained modified version of GameHub for education purposes
@@ -11,7 +12,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - 経理のためのClaudeCode_実践編_gogcli｜hangai
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年02月04日分の3件の記事をまとめました。
 

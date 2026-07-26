@@ -2,12 +2,12 @@
 layout: post
 title: "はてなブックマーク 2026年05月15日 の記事まとめ (1件)"
 date: 2026-05-16 08:49:58 +0900
+permalink: /2026/05/15/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年05月15日分の1件の記事をまとめました。
 
 - 実践ハーネスエンジニアリング：ステアリングループを実例から読み解く / Practical Harness Engineering: Understanding Steering Loops Through Real-World Examples
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年05月15日分の1件の記事をまとめました。
 

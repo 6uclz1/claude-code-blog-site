@@ -5,6 +5,7 @@ import os
 import sys
 import feedparser
 import requests
+import yaml
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import pytz
@@ -205,6 +206,31 @@ URL: {url}
             return f"この記事は「{title}」について書かれています。要約の生成に失敗しましたが、詳細は元記事をご確認ください。"
     
 
+    @staticmethod
+    def escape_liquid(text):
+        """本文中の Liquid タグ（{{ ... }} / {% ... %}）をエスケープする
+
+        記事タイトルや要約に {{ や {% が含まれていると Jekyll のビルド時に
+        Liquid として解釈され、警告や本文の欠落が発生するため raw で囲む。
+        """
+        return re.sub(r'\{\{|\{%', lambda m: '{% raw %}' + m.group(0) + '{% endraw %}', text)
+
+    @staticmethod
+    def build_front_matter(front_matter):
+        """YAMLとして安全なフロントマターを生成する
+
+        タイトルや要約に含まれる " や \\ を手動で埋め込むとYAMLが壊れ、
+        Jekyllが記事を読み込めずRSSから記事が消えるため、必ずyaml.dumpを通す。
+        """
+        body = yaml.dump(
+            front_matter,
+            allow_unicode=True,
+            default_flow_style=False,
+            sort_keys=False,
+            width=10 ** 6,
+        )
+        return f"---\n{body}---\n"
+
     def create_daily_markdown_post(self, entries_summaries, date):
         """一日分のブックマークをまとめて一つのMarkdown記事を作成"""
         if not entries_summaries:
@@ -232,28 +258,35 @@ URL: {url}
         for i, (entry, summary) in enumerate(entries_summaries, 1):
             logger.info(f"Entry {i}: {entry['title']} - {entry['url']}")
             excerpt += f"\n- {entry['title']}\n"
-        
-        content = f"""---
-layout: post
-title: "はてなブックマーク {date.strftime('%Y年%m月%d日')} の記事まとめ ({article_count}件)"
-date: {publish_date_str}
-excerpt: "{excerpt}"
----
 
+        # パーマリンクはブックマーク日から生成する。
+        # date は実行時刻（RSS通知のため翌朝）なので、ビルド環境のタイムゾーン次第で
+        # /:year/:month/:day/ が翌日にずれ、翌日分の記事とURLが衝突してしまう。
+        permalink = f"/{date.strftime('%Y/%m/%d')}/hatena-bookmarks/"
+
+        front_matter = self.build_front_matter({
+            'layout': 'post',
+            'title': f"はてなブックマーク {date.strftime('%Y年%m月%d日')} の記事まとめ ({article_count}件)",
+            'date': publish_date_str,
+            'permalink': permalink,
+            'excerpt': excerpt,
+        })
+
+        content = f"""{front_matter}
 はてなブックマークで気になった記事をAIで要約してお届けします。
 {date.strftime('%Y年%m月%d日')}分の{article_count}件の記事をまとめました。
 
 """
-        
+
         # 各記事を追加
         for i, (entry, summary) in enumerate(entries_summaries, 1):
-            content += f"""## {i}. {entry['title']}
+            content += f"""## {i}. {self.escape_liquid(entry['title'])}
 
 **URL:** [{entry['url']}]({entry['url']})
 
 ### AI要約
 
-{summary}
+{self.escape_liquid(summary)}
 
 ---
 

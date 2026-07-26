@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年09月10日 の記事まとめ (6件)"
 date: 2025-09-11 08:13:55 +0900
+permalink: /2025/09/10/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年09月10日分の6件の記事をまとめました。
 
 - GitHub - oreilly-japan/deep-learning-from-scratch-6: 『ゼロから作る Deep Learning ❻』
@@ -17,7 +18,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - npmパッケージ/GitHub Actionsを利用する側/公開する側でサプライチェーン攻撃を防ぐためにやることメモ
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年09月10日分の6件の記事をまとめました。
 

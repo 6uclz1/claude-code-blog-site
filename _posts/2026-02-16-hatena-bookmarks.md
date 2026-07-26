@@ -2,12 +2,12 @@
 layout: post
 title: "はてなブックマーク 2026年02月16日 の記事まとめ (1件)"
 date: 2026-02-17 08:23:23 +0900
+permalink: /2026/02/16/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年02月16日分の1件の記事をまとめました。
 
 - GitHub - ejbills/DockDoor: Window peeking & alt-tab for macOS
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年02月16日分の1件の記事をまとめました。
 

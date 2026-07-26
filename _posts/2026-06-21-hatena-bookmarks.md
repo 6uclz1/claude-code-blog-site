@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2026年06月21日 の記事まとめ (3件)"
 date: 2026-06-22 09:06:19 +0900
+permalink: /2026/06/21/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2026年06月21日分の3件の記事をまとめました。
 
 - Steering Claude Code: skills, hooks, subagents and more | Claude
@@ -11,7 +12,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Claude Codeをどのように キャッチアップしているか
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2026年06月21日分の3件の記事をまとめました。
 

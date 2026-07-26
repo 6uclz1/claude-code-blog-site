@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年12月12日 の記事まとめ (3件)"
 date: 2025-12-13 08:15:57 +0900
+permalink: /2025/12/12/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年12月12日分の3件の記事をまとめました。
 
 - ソフトウェアの成分表示？SBOM管理の課題とSSVC・AIを用いたベストプラクティス - NTT docomo Business Engineers' Blog
@@ -11,7 +12,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - GitHub Wrapped 2025 - Your Coding Year in Review
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年12月12日分の3件の記事をまとめました。
 

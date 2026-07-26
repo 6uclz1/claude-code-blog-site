@@ -2,6 +2,7 @@
 layout: post
 title: "はてなブックマーク 2025年09月03日 の記事まとめ (6件)"
 date: 2025-09-04 08:14:02 +0900
+permalink: /2025/09/03/hatena-bookmarks/
 excerpt: "はてなブックマークで気になった記事をAIで要約してお届けします。2025年09月03日分の6件の記事をまとめました。
 
 - GitHub、仕様駆動開発ツールキット「Spec Kit」を紹介 ——コーディングエージェントを利用して仕様を解釈し、開発計画・タスク分解・実装をおこなう | gihyo.jp
@@ -17,7 +18,6 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 - Malicious versions of Nx and some supporting plugins were published
 "
 ---
-
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年09月03日分の6件の記事をまとめました。
 
