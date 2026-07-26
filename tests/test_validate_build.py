@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""公開前ゲート(scripts/validate_build.py)のテスト"""
+
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from datetime import datetime, timedelta, timezone
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from scripts.validate_build import check_feed, check_log, main
+
+FEED_HEADER = '<?xml version="1.0" encoding="utf-8"?>\n<feed xmlns="http://www.w3.org/2005/Atom">'
+
+
+def entry(title='はてなブックマーク 2026年07月25日 の記事まとめ (9件)',
+          href='https://example.com/blog/2026/07/25/hatena-bookmarks/',
+          published='2026-07-25T23:56:15+00:00'):
+    return """
+  <entry>
+    <title type="html">%s</title>
+    <link href="%s" rel="alternate" type="text/html"/>
+    <published>%s</published>
+    <updated>%s</updated>
+  </entry>""" % (title, href, published, published)
+
+
+def feed(*entries):
+    return FEED_HEADER + ''.join(entries) + '\n</feed>\n'
+
+
+class TestCheckLog(unittest.TestCase):
+
+    def _errors(self, log_text):
+        with tempfile.NamedTemporaryFile('w', suffix='.log', delete=False, encoding='utf-8') as f:
+            f.write(log_text)
+            path = f.name
+        try:
+            errors = []
+            check_log(path, errors)
+            return errors
+        finally:
+            os.unlink(path)
+
+    def test_clean_log_passes(self):
+        self.assertEqual(self._errors('Generating... done in 1.2 seconds.\n'), [])
+
+    def test_yaml_exception_is_detected(self):
+        errors = self._errors(
+            'Error: YAML Exception reading /app/_posts/2025-12-18-hatena-bookmarks.md: '
+            'did not find expected key\n')
+        self.assertEqual(len(errors), 1)
+        self.assertIn('YAML', errors[0])
+
+    def test_url_conflict_is_detected(self):
+        errors = self._errors(
+            '          Conflict: The following destination is shared by multiple files.\n'
+            '                    /app/_site/2026/07/07/hatena-bookmarks/index.html\n')
+        self.assertEqual(len(errors), 1)
+        self.assertIn('同じURL', errors[0])
+
+    def test_ansi_colored_log_is_detected(self):
+        """Jekyll はファイルへリダイレクトしても色付けコードを出す"""
+        errors = self._errors(
+            '\x1b[33m          Conflict: The following destination is shared by multiple files.'
+            '\x1b[0m\n')
+        self.assertEqual(len(errors), 1)
+        self.assertIn('同じURL', errors[0])
+
+    def test_liquid_warning_is_detected(self):
+        errors = self._errors(
+            'Liquid Warning: Liquid syntax error (line 47): '
+            '[:end_of_string] is not a valid expression in "{{ }}"\n')
+        self.assertEqual(len(errors), 1)
+
+    def test_missing_log_is_reported(self):
+        errors = []
+        check_log('/nonexistent/build.log', errors)
+        self.assertEqual(len(errors), 1)
+
+
+class TestCheckFeed(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _errors(self, content, min_entries=1):
+        path = os.path.join(self.tmpdir, 'feed.xml')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        errors = []
+        check_feed(path, errors, min_entries)
+        return errors
+
+    def test_valid_feed_passes(self):
+        content = feed(
+            entry(),
+            entry(title='はてなブックマーク 2026年07月24日 の記事まとめ (4件)',
+                  href='https://example.com/blog/2026/07/24/hatena-bookmarks/',
+                  published='2026-07-24T23:58:57+00:00'))
+        self.assertEqual(self._errors(content), [])
+
+    def test_empty_title_is_detected(self):
+        """フロントマターが壊れた記事はタイトルが空になる(今回の実際の症状)"""
+        content = feed(entry(title=''), entry())
+        errors = self._errors(content)
+        self.assertTrue(any('タイトルが空' in e for e in errors), errors)
+
+    def test_duplicate_url_is_detected(self):
+        """URL衝突は片方の記事が上書きされて消えることを意味する"""
+        content = feed(entry(), entry(published='2026-07-24T23:58:57+00:00'))
+        errors = self._errors(content)
+        self.assertTrue(any('重複' in e for e in errors), errors)
+
+    def test_future_published_is_detected(self):
+        future = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+        content = feed(entry(published=future))
+        errors = self._errors(content)
+        self.assertTrue(any('未来' in e for e in errors), errors)
+
+    def test_same_second_entries_are_detected(self):
+        """ビルド時刻を持つ壊れた記事は同一秒で束になって現れる"""
+        stamp = '2026-07-26T13:35:59+00:00'
+        content = feed(
+            entry(href='https://example.com/blog/2026/07/26/a-post/', published=stamp),
+            entry(href='https://example.com/blog/2026/07/26/b-post/', published=stamp))
+        errors = self._errors(content)
+        self.assertTrue(any('同一時刻' in e for e in errors), errors)
+
+    def test_unexpected_url_shape_is_detected(self):
+        content = feed(entry(href='https://example.com/blog/2026/07/26/2025-12-18-hatena-bookmarks'))
+        errors = self._errors(content)
+        self.assertTrue(any('形式' in e for e in errors), errors)
+
+    def test_malformed_xml_is_detected(self):
+        errors = self._errors(FEED_HEADER + entry() + '\n')  # 閉じタグなし
+        self.assertTrue(any('XML' in e for e in errors), errors)
+
+    def test_missing_feed_is_detected(self):
+        errors = []
+        check_feed(os.path.join(self.tmpdir, 'nope.xml'), errors)
+        self.assertTrue(any('生成されていない' in e for e in errors), errors)
+
+    def test_too_few_entries_is_detected(self):
+        errors = self._errors(feed(entry()), min_entries=5)
+        self.assertTrue(any('少なすぎる' in e for e in errors), errors)
+
+
+class TestMain(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _feed_path(self, content):
+        path = os.path.join(self.tmpdir, 'feed.xml')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return path
+
+    def test_exit_zero_when_healthy(self):
+        path = self._feed_path(feed(entry()))
+        self.assertEqual(main(['--feed', path]), 0)
+
+    def test_exit_nonzero_when_broken(self):
+        path = self._feed_path(feed(entry(title='')))
+        self.assertEqual(main(['--feed', path]), 1)
+
+
+if __name__ == '__main__':
+    unittest.main()

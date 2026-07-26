@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""ビルド結果を公開前に検証するスクリプト
+
+Jekyll は記事が壊れていても警告を出すだけで exit 0 を返すことがあるため
+(URL衝突・Liquid警告は strict_front_matter でも検知できない)、
+ビルドログと生成された feed.xml を機械的に検査して、
+問題があれば非ゼロで終了する。
+
+使い方:
+    python scripts/validate_build.py --log build.log --feed _site/feed.xml
+"""
+
+import argparse
+import os
+import re
+import sys
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta, timezone
+
+ATOM = '{http://www.w3.org/2005/Atom}'
+
+# Jekyll はファイルへリダイレクトしても色付けのエスケープシーケンスを出すため、
+# パターンマッチの前に取り除く
+ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+# ビルドログに出たら公開を止めるパターン
+LOG_PATTERNS = [
+    (re.compile(r'YAML Exception'), 'フロントマターのYAMLが壊れている記事がある'),
+    (re.compile(r'Conflict: The following destination'),
+     '複数の記事が同じURLに出力されている(片方が消える)'),
+    (re.compile(r'Liquid Warning'), '本文中のLiquidタグが解釈されて警告が出ている'),
+    (re.compile(r'Error reading'), '読み込めない記事がある'),
+]
+
+# 記事のURLは /YYYY/MM/DD/slug/ 形式
+POST_URL_RE = re.compile(r'/\d{4}/\d{2}/\d{2}/[^/]+/$')
+
+
+def check_log(path, errors):
+    """Jekyllのビルドログを検査する"""
+    if not path:
+        return
+    if not os.path.exists(path):
+        errors.append('ビルドログが見つからない: %s' % path)
+        return
+
+    with open(path, encoding='utf-8', errors='replace') as f:
+        log = ANSI_RE.sub('', f.read())
+
+    for pattern, message in LOG_PATTERNS:
+        hits = pattern.findall(log)
+        if hits:
+            errors.append('ビルドログ: %s (%d件)' % (message, len(hits)))
+
+
+def _text(entry, tag):
+    node = entry.find(ATOM + tag)
+    return (node.text or '').strip() if node is not None else ''
+
+
+def check_feed(path, errors, min_entries=1):
+    """生成された feed.xml を検査する"""
+    if not os.path.exists(path):
+        errors.append('feed.xml が生成されていない: %s' % path)
+        return
+
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError as e:
+        errors.append('feed.xml がXMLとして壊れている: %s' % e)
+        return
+
+    entries = root.findall(ATOM + 'entry')
+    if len(entries) < min_entries:
+        errors.append('feed.xml のentryが少なすぎる: %d件 (最低%d件)' % (len(entries), min_entries))
+        return
+
+    now = datetime.now(timezone.utc)
+    links, published_at = [], []
+
+    for i, entry in enumerate(entries, 1):
+        title = _text(entry, 'title')
+        link_node = entry.find(ATOM + 'link')
+        href = link_node.get('href', '') if link_node is not None else ''
+        label = href or 'entry #%d' % i
+
+        # フロントマターが壊れた記事はタイトルが空になる
+        if not title:
+            errors.append('feed.xml: タイトルが空のentryがある: %s' % label)
+
+        if not href:
+            errors.append('feed.xml: linkがないentryがある: entry #%d' % i)
+        else:
+            links.append(href)
+            path_part = href.split('://', 1)[-1]
+            path_part = path_part[path_part.index('/'):] if '/' in path_part else ''
+            if not POST_URL_RE.search(path_part):
+                errors.append('feed.xml: URLの形式が想定と違う: %s' % href)
+
+        published = _text(entry, 'published')
+        if not published:
+            errors.append('feed.xml: publishedがないentryがある: %s' % label)
+            continue
+        try:
+            dt = datetime.fromisoformat(published.replace('Z', '+00:00'))
+        except ValueError:
+            errors.append('feed.xml: publishedが日付として読めない: %s (%s)' % (published, label))
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        # 未来日付は時計ずれ以外ありえない
+        if dt > now + timedelta(hours=1):
+            errors.append('feed.xml: publishedが未来になっている: %s (%s)' % (published, label))
+        published_at.append(dt)
+
+    duplicates = sorted({link for link in links if links.count(link) > 1})
+    for link in duplicates:
+        errors.append('feed.xml: URLが重複している(記事が上書きされている): %s' % link)
+
+    # 壊れた記事はビルド時刻を持つため、同一秒のentryが束になって現れる
+    if len(published_at) >= 2:
+        newest = max(published_at)
+        same_second = [dt for dt in published_at if dt == newest]
+        if len(same_second) > 1:
+            errors.append(
+                'feed.xml: publishedが同一時刻のentryが%d件ある(ビルド時刻が入り込んでいる可能性)'
+                % len(same_second))
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description='ビルド結果を公開前に検証する')
+    parser.add_argument('--log', help='Jekyllのビルドログ')
+    parser.add_argument('--feed', default='_site/feed.xml', help='生成された feed.xml')
+    parser.add_argument('--min-entries', type=int, default=1, help='feed.xml の最低entry数')
+    args = parser.parse_args(argv)
+
+    errors = []
+    check_log(args.log, errors)
+    check_feed(args.feed, errors, args.min_entries)
+
+    if errors:
+        print('❌ 検証に失敗しました。サイトを公開しません:', file=sys.stderr)
+        for error in errors:
+            print('  - %s' % error, file=sys.stderr)
+        return 1
+
+    print('✅ 検証OK: ビルドログ・feed.xml に問題はありません')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

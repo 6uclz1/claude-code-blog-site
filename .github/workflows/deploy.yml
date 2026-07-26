@@ -37,8 +37,25 @@ jobs:
         uses: docker/setup-buildx-action@v3
       - name: Build Jekyll with Docker
         run: |
-          docker build -f Dockerfile.production -t jekyll-site .
-          docker run --rm -v $PWD/_site:/output jekyll-site sh -c "cp -r /usr/share/nginx/html/* /output/"
+          docker compose build jekyll
+          docker compose run --rm -e JEKYLL_ENV=production jekyll sh -c "
+            bundle install &&
+            bundle exec jekyll build > /app/build.log 2>&1
+            code=\$?
+            cat /app/build.log
+            exit \$code
+          "
+      # Jekyll は URL衝突 や Liquid警告 を出しても exit 0 を返すため、
+      # ビルドログと feed.xml を検査してから公開する
+      - name: Validate build output
+        run: python3 scripts/validate_build.py --log build.log --feed _site/feed.xml --min-entries 1
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jekyll-build-log
+          path: build.log
+          if-no-files-found: ignore
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v5

@@ -28,9 +28,20 @@ bundle exec jekyll build --watch
 # Check Jekyll configuration
 bundle exec jekyll doctor
 
+# Build and validate before publishing (公開前ゲートと同じ検証)
+bundle exec jekyll build > build.log 2>&1
+python scripts/validate_build.py --log build.log --feed _site/feed.xml
+
 # Validate HTML output (if htmlproofer is added)
 bundle exec htmlproofer ./_site
 ```
+
+**Publishing gate**: `_config.yml` sets `strict_front_matter: true` so broken front
+matter fails the build. Jekyll still exits 0 on URL conflicts and Liquid warnings, so
+`scripts/validate_build.py` scans the build log and the generated `feed.xml`
+(empty titles, duplicate URLs, build-time timestamps) and blocks the deploy.
+The daily automation runs this gate *before* committing — nothing that fails
+validation is committed or published, and a failure opens an issue automatically.
 
 ### Docker Development (Recommended)
 ```bash

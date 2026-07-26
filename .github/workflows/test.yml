@@ -32,5 +32,21 @@ jobs:
           docker compose run --rm jekyll sh -c "
             bundle install &&
             bundle exec jekyll doctor &&
-            bundle exec jekyll build
+            bundle exec jekyll build > /app/build.log 2>&1
+            code=\$?
+            cat /app/build.log
+            exit \$code
           "
+
+      # Jekyll は URL衝突 や Liquid警告 を出しても exit 0 を返すため、
+      # ビルドログと feed.xml を検査して壊れた状態をマージさせない
+      - name: Validate build output
+        run: python3 scripts/validate_build.py --log build.log --feed _site/feed.xml
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jekyll-build-log
+          path: build.log
+          if-no-files-found: ignore

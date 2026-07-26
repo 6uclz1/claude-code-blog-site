@@ -25,6 +25,11 @@ defaults:
     values:
       layout: "post"
 
+# フロントマターが壊れている記事があればビルドを失敗させる
+# (これがないと Jekyll は YAML Exception をログに出すだけで exit 0 になり、
+#  タイトルなしの記事がそのままRSSに配信されてしまう)
+strict_front_matter: true
+
 # RSS Feed Configuration
 feed:
   posts_limit: 20
