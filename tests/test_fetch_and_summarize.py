@@ -564,6 +564,10 @@ class TestRun(unittest.TestCase):
         patcher = patch('scripts.fetch_and_summarize.GeminiSummarizer')
         self.mock_summarizer_cls = patcher.start()
         self.addCleanup(patcher.stop)
+        # 実際の _posts を見に行くと、その日の記事があるだけで挙動が変わってしまう
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.posts_dir = Path(self.tmp.name) / '_posts'
 
     def test_missing_api_key_aborts(self):
         del os.environ['GEMINI_API_KEY']
@@ -584,7 +588,7 @@ class TestRun(unittest.TestCase):
         mock_summarize.return_value = [(bookmark, Digest(SUMMARY_FALLBACK))]
 
         with self.assertRaises(AbortRun):
-            run(date(2025, 6, 21))
+            run(date(2025, 6, 21), posts_dir=self.posts_dir)
         mock_write.assert_not_called()
 
     @patch('scripts.fetch_and_summarize.write_post')
@@ -601,7 +605,7 @@ class TestRun(unittest.TestCase):
         mock_summarize.return_value = [(ok, Digest('要約。')), (ng, Digest(SUMMARY_FALLBACK))]
         mock_write.return_value = True
 
-        self.assertEqual(run(date(2025, 6, 21)), 1)
+        self.assertEqual(run(date(2025, 6, 21), posts_dir=self.posts_dir), 1)
         mock_write.assert_called_once()
 
     @patch('scripts.fetch_and_summarize.write_post')
@@ -614,14 +618,14 @@ class TestRun(unittest.TestCase):
         mock_summarize.return_value = [(Bookmark('A', 'https://example.com/1'), Digest('要約。'))]
         mock_write.return_value = True
 
-        self.assertEqual(run(date(2025, 6, 21)), 1)
+        self.assertEqual(run(date(2025, 6, 21), posts_dir=self.posts_dir), 1)
         mock_write.assert_called_once()
 
     @patch('scripts.fetch_and_summarize.fetch_entries')
     def test_no_entries(self, mock_fetch):
         mock_fetch.return_value = []
 
-        self.assertEqual(run(date(2025, 6, 21)), 0)
+        self.assertEqual(run(date(2025, 6, 21), posts_dir=self.posts_dir), 0)
 
     @patch('scripts.fetch_and_summarize.select_bookmarks')
     @patch('scripts.fetch_and_summarize.fetch_entries')
@@ -629,7 +633,42 @@ class TestRun(unittest.TestCase):
         mock_fetch.return_value = [Mock()]
         mock_select.return_value = []
 
-        self.assertEqual(run(date(2025, 6, 21)), 0)
+        self.assertEqual(run(date(2025, 6, 21), posts_dir=self.posts_dir), 0)
+
+    @patch('scripts.fetch_and_summarize.write_post')
+    @patch('scripts.fetch_and_summarize.summarize_bookmarks')
+    @patch('scripts.fetch_and_summarize.select_bookmarks')
+    @patch('scripts.fetch_and_summarize.fetch_entries')
+    def test_all_extractions_failed_aborts(
+            self, mock_fetch, mock_select, mock_summarize, mock_write):
+        """本文取得が全滅した日を成功扱いで終えると、記事が無いまま誰も気づけない"""
+        mock_fetch.return_value = [Mock()]
+        mock_select.return_value = [
+            Bookmark('A', 'https://example.com/1'),
+            Bookmark('B', 'https://example.com/2'),
+        ]
+        mock_summarize.return_value = []
+
+        with self.assertRaises(AbortRun):
+            run(date(2025, 6, 21), posts_dir=self.posts_dir)
+        mock_write.assert_not_called()
+
+    @patch('scripts.fetch_and_summarize.summarize_bookmarks')
+    @patch('scripts.fetch_and_summarize.select_bookmarks')
+    @patch('scripts.fetch_and_summarize.fetch_entries')
+    def test_existing_post_skips_summarization(
+            self, mock_fetch, mock_select, mock_summarize):
+        """既に記事があるなら要約もしない（APIを無駄に呼ばない）"""
+        path = post_path(date(2025, 6, 21), self.posts_dir)
+        path.parent.mkdir(parents=True)
+        path.write_text('existing content', encoding='utf-8')
+
+        mock_fetch.return_value = [Mock()]
+        mock_select.return_value = [Bookmark('A', 'https://example.com/1')]
+
+        self.assertEqual(run(date(2025, 6, 21), posts_dir=self.posts_dir), 0)
+        mock_summarize.assert_not_called()
+        self.assertEqual(path.read_text(encoding='utf-8'), 'existing content')
 
     @patch('scripts.fetch_and_summarize.write_post')
     @patch('scripts.fetch_and_summarize.summarize_bookmarks')
@@ -640,7 +679,7 @@ class TestRun(unittest.TestCase):
         mock_select.return_value = [Bookmark('A', 'https://example.com/1')]
         mock_summarize.return_value = [(Bookmark('A', 'https://example.com/1'), Digest('要約。'))]
 
-        self.assertEqual(run(date(2025, 6, 21), dry_run=True), 0)
+        self.assertEqual(run(date(2025, 6, 21), dry_run=True, posts_dir=self.posts_dir), 0)
         mock_write.assert_not_called()
 
 

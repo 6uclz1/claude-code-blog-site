@@ -1,21 +1,27 @@
-name: Update Blog with Hatena Bookmarks
+name: Build Weekly Digest
 
 on:
+  # 毎週月曜 9:30 JST (0:30 UTC)。日曜ぶんの日次記事は当日8:00 JSTに作られるので、
+  # その後に走らせて日〜土の7日分をまとめる
   schedule:
-    - cron: '0 23 * * *'  # 毎日8:00 JST (23:00 UTC)
-  workflow_dispatch:      # 手動実行も可能
+    - cron: '30 0 * * 1'
+  workflow_dispatch:
+    inputs:
+      week_ending:
+        description: '週の最終日 (YYYY-MM-DD)。既定は日本時間の昨日'
+        required: false
 
 permissions:
   contents: write
   issues: write
 
-# 同時に走ると同じ日の記事を二重に作ろうとするため直列化する
+# 日次の更新と同じグループにして、main への push がぶつからないようにする
 concurrency:
   group: update-blog
   cancel-in-progress: false
 
 jobs:
-  update-blog:
+  weekly-digest:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -23,8 +29,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # python-scripts サービスは image 指定だけでビルド対象を持たないため、
-      # Docker を挟まずランナー上で直接実行する（依存のキャッシュも効く）
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -46,12 +50,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run fetch and summarize script
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # 任意。未設定でも r.jina.ai は匿名で利用できる
-          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
-        run: python scripts/fetch_and_summarize.py
+      # 要約は日次記事から流用するので、Gemini APIは呼ばない
+      - name: Build weekly digest
+        run: |
+          if [ -n "${{ inputs.week_ending }}" ]; then
+            python scripts/build_weekly_digest.py --week-ending "${{ inputs.week_ending }}"
+          else
+            python scripts/build_weekly_digest.py
+          fi
 
       - name: Check for changes
         id: verify-changed-files
@@ -73,8 +79,6 @@ jobs:
           set -o pipefail
           npm run build 2>&1 | tee build.log
 
-      # ビルドが成功しても記事が壊れたまま公開されることがあるため、
-      # ビルドログと feed.xml を検査してから公開する
       - name: Validate build output
         if: steps.verify-changed-files.outputs.changed == 'true'
         run: |
@@ -85,22 +89,20 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: failed-build
+          name: failed-weekly-build
           path: |
             build.log
             _posts/
           if-no-files-found: ignore
 
-      # 検証を通ったのでコミットして push する。
-      # 公開は push を受けた deploy.yml に任せる。両方から Pages にデプロイすると
-      # 同じ environment に対する同時デプロイになり、片方が失敗する
+      # 検証を通ったのでコミットして push する。公開は deploy.yml に任せる
       - name: Commit and push changes
         if: steps.verify-changed-files.outputs.changed == 'true'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add _posts/
-          git commit -m "自動更新: はてなブックマークから記事を要約して追加 $(date '+%Y-%m-%d %H:%M:%S')"
+          git commit -m "自動更新: 週刊まとめを追加 $(date '+%Y-%m-%d %H:%M:%S')"
 
           # 実行中に main が進んでいると push が落ち、生成した記事が失われる。
           # rebase しながら数回まで再試行する
@@ -125,17 +127,17 @@ jobs:
           gh label create automation-failure --color B60205 \
             --description "自動更新ワークフローの失敗" 2>/dev/null || true
 
-          body="自動更新ワークフローが失敗しました。検証を通らなかったため、記事のコミットと公開は行われていません。
+          body="週刊まとめの生成が失敗しました。検証を通らなかったため、記事のコミットと公開は行われていません。
 
           - 実行ログ: ${RUN_URL}
-          - 生成物は artifact \`failed-build\` に保存されています
+          - 生成物は artifact \`failed-weekly-build\` に保存されています
 
-          再実行する場合は Actions から \`Update Blog with Hatena Bookmarks\` を workflow_dispatch してください。"
+          再実行する場合は Actions から \`Build Weekly Digest\` を workflow_dispatch してください。"
 
           existing=$(gh issue list --label automation-failure --state open --limit 1 --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "$body"
           else
-            gh issue create --title "自動更新ワークフローが失敗しました" \
+            gh issue create --title "週刊まとめの生成が失敗しました" \
               --label automation-failure --body "$body"
           fi

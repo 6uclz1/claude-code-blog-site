@@ -2,13 +2,18 @@
 import type { GetStaticPaths } from 'astro';
 import { render } from 'astro:content';
 import PostLayout from '../layouts/PostLayout.astro';
-import { getSortedPosts, permalinkToParam, type Post } from '../lib/posts';
+import type { PostRef } from '../layouts/PostLayout.astro';
+import { getSortedPosts, permalinkToParam, postUrl, type Post } from '../lib/posts';
 
 export const getStaticPaths: GetStaticPaths = async () => {
   const posts = await getSortedPosts();
   const seen = new Map<string, string>();
 
-  return posts.map((post) => {
+  // 記事の並びは新しい順。index-1 が1つ新しい記事、index+1 が1つ古い記事になる
+  const ref = (post: Post | undefined): PostRef | undefined =>
+    post ? { title: post.data.title, url: postUrl(post) } : undefined;
+
+  return posts.map((post, index) => {
     const slug = permalinkToParam(post.data.permalink);
 
     // permalink が重複すると片方の記事がサイトから消えるため、ビルドを止める
@@ -20,22 +25,34 @@ export const getStaticPaths: GetStaticPaths = async () => {
     }
     seen.set(slug, post.id);
 
-    return { params: { slug }, props: { post } };
+    return {
+      params: { slug },
+      props: {
+        post,
+        newer: ref(posts[index - 1]),
+        older: ref(posts[index + 1]),
+      },
+    };
   });
 };
 
 interface Props {
   post: Post;
+  newer?: PostRef;
+  older?: PostRef;
 }
 
-const { post } = Astro.props;
+const { post, newer, older } = Astro.props;
 const { Content } = await render(post);
 ---
 
 <PostLayout
   title={post.data.title}
   date={post.data.date}
+  updated={post.data.updated}
   excerpt={post.data.excerpt}
+  newer={newer}
+  older={older}
 >
   <Content />
 </PostLayout>

@@ -1,0 +1,72 @@
+---
+// 全文検索。インデックスは Pagefind が `npm run build` の後段で dist を走査して作る
+// （src/layouts/PostLayout.astro の data-pagefind-body が対象）。
+// dist を経由しない `npm run dev` では /pagefind/ が無いため検索は動かない。
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteNav from '../components/SiteNav.astro';
+import { withBase } from '../lib/posts';
+
+const pagefindCss = withBase('/pagefind/pagefind-ui.css');
+const pagefindJs = withBase('/pagefind/pagefind-ui.js');
+---
+
+<BaseLayout
+  title="検索"
+  description="このブログの記事を全文検索できます。"
+  noindex
+>
+  <section class="page-section">
+    <div class="page-heading">
+      <h1>検索</h1>
+      <p class="eyebrow">記事本文から探す</p>
+    </div>
+
+    <link rel="stylesheet" href={pagefindCss} />
+    <div id="search" class="search-ui">
+      <noscript>
+        <p class="empty-state">
+          検索にはJavaScriptが必要です。アーカイブから探してください。
+        </p>
+      </noscript>
+    </div>
+
+    <nav class="post-nav" aria-label="記事ナビゲーション">
+      <a class="post-nav__back" href={withBase('/')}>← 記事一覧へ</a>
+    </nav>
+    <SiteNav />
+  </section>
+</BaseLayout>
+
+<script is:inline src={pagefindJs}></script>
+<script is:inline>
+  // Pagefind の UI は pagefind-ui.js が読み込まれてから初期化する。
+  // 開発サーバーでは /pagefind/ が存在しないので、その場合は静かに諦める。
+  window.addEventListener('DOMContentLoaded', () => {
+    if (typeof PagefindUI === 'undefined') {
+      document.getElementById('search').innerHTML =
+        '<p class="empty-state">検索インデックスが見つかりません（本番ビルドでのみ利用できます）。</p>';
+      return;
+    }
+    new PagefindUI({
+      element: '#search',
+      showSubResults: true,
+      showImages: false,
+      excerptLength: 24,
+      translations: {
+        placeholder: '記事を検索',
+        clear_search: 'クリア',
+        load_more: 'さらに表示',
+        search_label: 'このサイトを検索',
+        filters_label: '絞り込み',
+        zero_results: '[SEARCH_TERM] に一致する記事はありません',
+        many_results: '[SEARCH_TERM] の検索結果 [COUNT] 件',
+        one_result: '[SEARCH_TERM] の検索結果 1 件',
+        alt_search:
+          '[SEARCH_TERM] の結果はありません。[DIFFERENT_TERM] の結果を表示しています',
+        search_suggestion:
+          '[SEARCH_TERM] の結果はありません。別のキーワードをお試しください',
+        searching: '[SEARCH_TERM] を検索中…',
+      },
+    });
+  });
+</script>

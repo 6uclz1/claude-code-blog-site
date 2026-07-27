@@ -395,6 +395,239 @@ a {
   margin-top: 0.8rem;
 }
 
+/* 前後の記事。1件しか無いときも左右の位置が動かないよう2カラム固定にする */
+.post-nav__siblings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.2rem 1.8rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.6rem;
+}
+
+.post-nav__sibling {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 240ms ease;
+}
+
+/* 「古い記事」だけのときも右側に置く */
+.post-nav__sibling--older {
+  grid-column: 2;
+  justify-items: end;
+  text-align: right;
+}
+
+.post-nav__label {
+  color: var(--faint);
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+}
+
+.post-nav__title {
+  font-size: 0.86rem;
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.post-nav__sibling:hover,
+.post-nav__sibling:focus-visible {
+  color: var(--fg);
+  outline: none;
+}
+
+.post-nav__sibling:hover .post-nav__title,
+.post-nav__sibling:focus-visible .post-nav__title {
+  text-decoration: underline;
+  text-underline-offset: 0.24em;
+}
+
+/* Site navigation（一覧下の補助リンク） */
+.site-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.4rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.4rem;
+}
+
+.site-nav a {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-decoration: none;
+  transition: color 240ms ease;
+}
+
+.site-nav a:hover,
+.site-nav a:focus-visible {
+  color: var(--fg);
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 0.24em;
+}
+
+/* Archive */
+.archive-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.2rem;
+}
+
+.archive-jump a {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-decoration: none;
+  transition: color 240ms ease;
+}
+
+.archive-jump a:hover,
+.archive-jump a:focus-visible {
+  color: var(--fg);
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 0.24em;
+}
+
+.archive-year {
+  display: grid;
+  gap: 1rem;
+}
+
+.archive-year__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  margin: 0;
+  /* 年見出しへジャンプしたとき、固定ヘッダーの下に隠れないようにする */
+  scroll-margin-top: 6rem;
+  color: var(--fg);
+  font-size: 1.12rem;
+  font-weight: var(--text-weight);
+  letter-spacing: var(--title-letter-spacing);
+}
+
+.archive-year__count {
+  color: var(--faint);
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+}
+
+.archive-list {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.archive-row {
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr);
+  gap: 0.2rem 1.8rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.7rem 0;
+}
+
+.archive-row:last-child {
+  border-bottom: 0;
+}
+
+.archive-row__date {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+}
+
+.archive-row__link {
+  color: var(--muted);
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+  transition: color 240ms ease;
+}
+
+.archive-row__link:hover,
+.archive-row__link:focus-visible {
+  color: var(--fg);
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 0.24em;
+}
+
+/* ブックマーク先サイトの集計 */
+.host-list {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.host-row {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: 0.2rem 1.4rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.9rem 0;
+}
+
+.host-row:last-child {
+  border-bottom: 0;
+}
+
+.host-row__count {
+  color: var(--fg);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  text-align: right;
+}
+
+.host-row__body {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.host-row__name {
+  color: var(--muted);
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+.host-row__latest {
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+  transition: color 240ms ease;
+}
+
+.host-row__latest:hover,
+.host-row__latest:focus-visible {
+  color: var(--fg);
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 0.24em;
+}
+
+/* 検索（Pagefind のUIをサイトの配色に合わせる） */
+.search-ui {
+  --pagefind-ui-scale: 0.9;
+  --pagefind-ui-primary: var(--fg);
+  --pagefind-ui-text: var(--fg);
+  --pagefind-ui-background: transparent;
+  --pagefind-ui-border: var(--line);
+  --pagefind-ui-tag: var(--panel);
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-border-radius: 0;
+  --pagefind-ui-font: var(--font-sans);
+}
+
 .post-nav__back {
   color: var(--muted);
   font-size: 0.82rem;
@@ -551,6 +784,22 @@ a {
 
   .post-row__date {
     padding-top: 0;
+  }
+
+  .archive-row {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+
+  /* 前後の記事は縦積みにして、右寄せも解除する */
+  .post-nav__siblings {
+    grid-template-columns: 1fr;
+  }
+
+  .post-nav__sibling--older {
+    grid-column: 1;
+    justify-items: start;
+    text-align: left;
   }
 }
 

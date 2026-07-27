@@ -3,14 +3,40 @@ import BaseLayout from './BaseLayout.astro';
 import { formatDateJa, toDescription, withBase } from '../lib/posts';
 import { SITE } from '../site';
 
+export interface PostRef {
+  title: string;
+  url: string;
+}
+
 interface Props {
   title: string;
   date: Date;
+  updated?: Date;
   excerpt?: string;
+  /** 一覧の並び（新しい順）で1つ新しい記事 / 1つ古い記事 */
+  newer?: PostRef;
+  older?: PostRef;
 }
 
-const { title, date, excerpt } = Astro.props;
+const { title, date, updated, excerpt, newer, older } = Astro.props;
 const description = excerpt ? toDescription(excerpt) : SITE.description;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+
+// 検索結果に日付と著者を出せるようにする構造化データ
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: title,
+  description,
+  datePublished: date.toISOString(),
+  dateModified: (updated ?? date).toISOString(),
+  author: { '@type': 'Person', name: SITE.author },
+  publisher: { '@type': 'Person', name: SITE.author },
+  inLanguage: SITE.lang,
+  url: canonical,
+  mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
+  image: new URL(withBase(SITE.ogImage), Astro.site).href,
+};
 ---
 
 <BaseLayout
@@ -18,11 +44,19 @@ const description = excerpt ? toDescription(excerpt) : SITE.description;
   description={description}
   ogType="article"
   publishedTime={date}
+  modifiedTime={updated}
+  jsonLd={jsonLd}
 >
-  <article class="post-page">
+  <!--
+    data-pagefind-body を付けたページだけが検索インデックスに入る。
+    記事ページにだけ付けることで、一覧やアーカイブが検索結果に出るのを防いでいる。
+  -->
+  <article class="post-page" data-pagefind-body>
     <header class="post-page__header">
       <p class="post-page__meta">
-        <time datetime={date.toISOString()}>{formatDateJa(date)}</time>
+        <time datetime={date.toISOString()} data-pagefind-meta="date">
+          {formatDateJa(date)}
+        </time>
       </p>
       <h1>{title}</h1>
     </header>
@@ -31,7 +65,29 @@ const description = excerpt ? toDescription(excerpt) : SITE.description;
       <slot />
     </div>
 
-    <nav class="post-nav" aria-label="記事ナビゲーション">
+    <nav class="post-nav" aria-label="記事ナビゲーション" data-pagefind-ignore>
+      {
+        (newer || older) && (
+          <div class="post-nav__siblings">
+            {newer && (
+              <a class="post-nav__sibling" href={newer.url} rel="prev">
+                <span class="post-nav__label">← 新しい記事</span>
+                <span class="post-nav__title">{newer.title}</span>
+              </a>
+            )}
+            {older && (
+              <a
+                class="post-nav__sibling post-nav__sibling--older"
+                href={older.url}
+                rel="next"
+              >
+                <span class="post-nav__label">古い記事 →</span>
+                <span class="post-nav__title">{older.title}</span>
+              </a>
+            )}
+          </div>
+        )
+      }
       <a class="post-nav__back" href={withBase('/')}>← 記事一覧へ</a>
     </nav>
   </article>

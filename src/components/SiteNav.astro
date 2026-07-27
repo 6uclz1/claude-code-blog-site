@@ -1,0 +1,16 @@
+---
+// 一覧ページの下に置く回遊用リンク。ヘッダーはブランド1つだけの見せ方を崩したくないので、
+// アーカイブ・検索といった補助ページへの導線はこちらにまとめている。
+import { withBase } from '../lib/posts';
+
+const links = [
+  { href: withBase('/archive/'), label: 'アーカイブ' },
+  { href: withBase('/sites/'), label: 'ブックマーク先' },
+  { href: withBase('/search/'), label: '検索' },
+  { href: withBase('/feed.xml'), label: 'RSS' },
+];
+---
+
+<nav class="site-nav" aria-label="サイト内ナビゲーション">
+  {links.map(({ href, label }) => <a href={href}>{label}</a>)}
+</nav>

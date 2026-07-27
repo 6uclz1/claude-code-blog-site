@@ -12,6 +12,9 @@ const posts = defineCollection({
     // Jekyll の permalink をそのまま記事URLに使う（既存URLを維持する）
     permalink: z.string(),
     excerpt: z.string().optional(),
+    // 公開後に記事を直したときの更新日時。フィードの <updated> と
+    // サイトマップの <lastmod> に反映される（省略時は date と同じ）
+    updated: z.coerce.date().optional(),
     // Jekyll 用の指定。Astro では使わないが、既存記事に残っているため許容する
     layout: z.string().optional(),
   }),

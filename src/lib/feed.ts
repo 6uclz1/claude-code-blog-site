@@ -7,6 +7,8 @@
  * summary は本文中の見出しから拾ったブックマークのタイトル一覧だけで構成する。
  */
 
+import { extractBookmarkTitles } from './bookmarks';
+
 /** Slackのプレビューに収まる範囲。超える分は「ほかN件」にまとめる */
 export const FEED_SUMMARY_MAX_CHARS = 280;
 /** 1件のタイトルがこれを超えたら省略する（1行に収めて一覧の見通しを保つ） */
@@ -14,34 +16,7 @@ export const FEED_SUMMARY_TITLE_MAX_CHARS = 48;
 
 const BULLET = '・';
 
-// ブックマークの見出しだけを拾う。`## 要点` `## 詳細な要約` のような
-// 記事内のセクション見出しを拾わないよう、リンク形式か採番形式のみを対象にする。
-const HEADING_PATTERNS = [
-  // 現在の形式: ## [タイトル](https://example.com/)
-  /^##\s+\[(.+)\]\(https?:\/\/[^)]+\)\s*$/,
-  // 旧形式: ## 1. タイトル
-  /^##\s+\d+\.\s+(.+?)\s*$/,
-];
-
 const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
-
-/** 記事本文からブックマークのタイトルを出現順に取り出す */
-export function extractBookmarkTitles(body: string): string[] {
-  const titles: string[] = [];
-
-  for (const line of body.split('\n')) {
-    for (const pattern of HEADING_PATTERNS) {
-      const match = pattern.exec(line);
-      if (!match) continue;
-      // 強調記法やバッククォートは一覧では読みにくいので落とす
-      const title = collapse(match[1]!.replace(/[*_`]/g, ''));
-      if (title) titles.push(title);
-      break;
-    }
-  }
-
-  return titles;
-}
 
 function shorten(title: string, limit: number): string {
   return title.length > limit ? `${title.slice(0, limit - 1).trimEnd()}…` : title;

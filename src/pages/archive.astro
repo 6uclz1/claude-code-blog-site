@@ -1,0 +1,72 @@
+---
+// 年別アーカイブ。ページ送りは1ページ10件で30ページ以上あり、
+// 古い記事にたどり着く手段がなかったため、全記事を1ページに並べる。
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteNav from '../components/SiteNav.astro';
+import {
+  formatDateJa,
+  getSortedPosts,
+  postUrl,
+  withBase,
+  yearOf,
+  type Post,
+} from '../lib/posts';
+
+const posts = await getSortedPosts();
+
+const byYear = new Map<number, Post[]>();
+for (const post of posts) {
+  const year = yearOf(post.data.date);
+  const bucket = byYear.get(year);
+  if (bucket) bucket.push(post);
+  else byYear.set(year, [post]);
+}
+
+// 新しい年から並べる
+const years = [...byYear.entries()].sort((a, b) => b[0] - a[0]);
+---
+
+<BaseLayout
+  title="アーカイブ"
+  description={`これまでの記事${posts.length}件を年別に並べたアーカイブです。`}
+>
+  <section class="page-section">
+    <div class="page-heading">
+      <h1>アーカイブ</h1>
+      <p class="eyebrow">全 {posts.length} 件</p>
+    </div>
+
+    <nav class="archive-jump" aria-label="年別ジャンプ">
+      {years.map(([year]) => <a href={`#y${year}`}>{year}年</a>)}
+    </nav>
+
+    {
+      years.map(([year, yearPosts]) => (
+        <section class="archive-year">
+          <h2 id={`y${year}`} class="archive-year__heading">
+            {year}年<span class="archive-year__count">{yearPosts.length}件</span>
+          </h2>
+          <div class="archive-list">
+            {yearPosts.map((post) => (
+              <div class="archive-row">
+                <span class="archive-row__date">
+                  <time datetime={post.data.date.toISOString()}>
+                    {formatDateJa(post.data.date)}
+                  </time>
+                </span>
+                <a class="archive-row__link" href={postUrl(post)}>
+                  {post.data.title}
+                </a>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))
+    }
+
+    <nav class="post-nav" aria-label="記事ナビゲーション">
+      <a class="post-nav__back" href={withBase('/')}>← 記事一覧へ</a>
+    </nav>
+    <SiteNav />
+  </section>
+</BaseLayout>

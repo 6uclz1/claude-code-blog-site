@@ -10,7 +10,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from scripts.validate_build import check_feed, check_log, main
+from scripts.validate_build import check_feed, check_log, check_pages, main
 
 FEED_HEADER = '<?xml version="1.0" encoding="utf-8"?>\n<feed xmlns="http://www.w3.org/2005/Atom">'
 
@@ -159,6 +159,64 @@ class TestCheckFeed(unittest.TestCase):
     def test_too_few_entries_is_detected(self):
         errors = self._errors(feed(entry()), min_entries=5)
         self.assertTrue(any('少なすぎる' in e for e in errors), errors)
+
+
+class TestCheckPages(unittest.TestCase):
+    """_posts の記事がすべてページとして出ているかの検査"""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.dist = os.path.join(self.tmpdir, 'dist')
+        self.posts = os.path.join(self.tmpdir, '_posts')
+        os.makedirs(self.posts)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _add_post(self, name):
+        with open(os.path.join(self.posts, name), 'w', encoding='utf-8') as f:
+            f.write('---\ntitle: t\n---\n')
+
+    def _add_page(self, rel_dir):
+        path = os.path.join(self.dist, *rel_dir.split('/'))
+        os.makedirs(path, exist_ok=True)
+        with open(os.path.join(path, 'index.html'), 'w', encoding='utf-8') as f:
+            f.write('<html></html>')
+
+    def _errors(self):
+        errors = []
+        check_pages(self.dist, self.posts, errors)
+        return errors
+
+    def test_ok_when_all_posts_are_generated(self):
+        self._add_post('2026-07-25-hatena-bookmarks.md')
+        self._add_post('2026-07-26-hatena-bookmarks.md')
+        self._add_page('2026/07/25/hatena-bookmarks')
+        self._add_page('2026/07/26/hatena-bookmarks')
+        # 一覧ページは記事として数えない
+        self._add_page('page2')
+
+        self.assertEqual(self._errors(), [])
+
+    def test_missing_page_is_detected(self):
+        """feed.xml は最新20件しか見ないため、古い記事の消失はここで捕まえる"""
+        self._add_post('2026-07-25-hatena-bookmarks.md')
+        self._add_post('2026-07-26-hatena-bookmarks.md')
+        self._add_page('2026/07/26/hatena-bookmarks')
+
+        errors = self._errors()
+        self.assertTrue(any('出力数が足りない' in e for e in errors), errors)
+
+    def test_missing_dist_is_detected(self):
+        self._add_post('2026-07-26-hatena-bookmarks.md')
+
+        errors = self._errors()
+        self.assertTrue(any('ビルド結果が見つからない' in e for e in errors), errors)
+
+    def test_skipped_when_dist_is_not_given(self):
+        errors = []
+        check_pages(None, self.posts, errors)
+        self.assertEqual(errors, [])
 
 
 class TestMain(unittest.TestCase):

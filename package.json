@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "astro dev --host 0.0.0.0 --port 4000",
     "start": "astro dev --host 0.0.0.0 --port 4000",
-    "build": "astro build",
+    "build": "astro build && pagefind --site dist",
     "preview": "astro preview --host 0.0.0.0 --port 4000",
     "check": "astro check",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "og": "node scripts/generate_og_image.mjs",
     "astro": "astro"
   },
   "dependencies": {
@@ -17,6 +20,8 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "typescript": "^6.0.3"
+    "pagefind": "^1.4.0",
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.4"
   }
 }

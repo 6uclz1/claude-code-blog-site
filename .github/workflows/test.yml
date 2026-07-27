@@ -3,8 +3,9 @@ name: Run Tests
 on:
   pull_request:
     branches: [ main ]
-  push:
-    branches: [ main ]
+  # main への push では deploy.yml が同じビルドと検証を実行するため、
+  # ここで走らせると同じ内容を二重にビルドすることになる
+  workflow_dispatch:
 
 jobs:
   test:
@@ -44,6 +45,9 @@ jobs:
       - name: Type check
         run: npm run check
 
+      - name: Run frontend tests
+        run: npm test
+
       - name: Build with Astro
         run: |
           set -o pipefail
@@ -52,7 +56,9 @@ jobs:
       # ビルドが成功しても記事が壊れたままマージされることがあるため、
       # ビルドログと feed.xml を検査する
       - name: Validate build output
-        run: python scripts/validate_build.py --log build.log --feed dist/feed.xml
+        run: |
+          python scripts/validate_build.py --log build.log --feed dist/feed.xml \
+            --dist dist
 
       - name: Upload build log on failure
         if: failure()
