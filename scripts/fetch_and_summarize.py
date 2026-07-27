@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterable, Sequence
+from urllib.parse import urlparse
 
 import feedparser
 import google.generativeai as genai
@@ -39,6 +40,9 @@ JST = pytz.timezone("Asia/Tokyo")
 # 記事本文の取得まわり
 HTTP_TIMEOUT_SEC = 15
 ARTICLE_TEXT_LIMIT = 3000
+# 本文として採用する最低文字数。これを下回るときは取得失敗とみなして
+# r.jina.ai 側の結果を使う（ログイン誘導やCookie同意だけのページ対策）
+MIN_ARTICLE_TEXT_CHARS = 200
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
@@ -52,6 +56,19 @@ CONTENT_SELECTORS = (
     ".content",
     "main",
     ".main-content",
+)
+
+# r.jina.ai 経由の取得
+# Twitter/X のようにJavaScriptでレンダリングされるサイトは HTML を直接取っても本文が無いため、
+# レンダリング済みのテキストを返してくれる r.jina.ai を使う。
+JINA_READER_PREFIX = "https://r.jina.ai/"
+JINA_TIMEOUT_SEC = 30
+# 直接取得を試さず、最初から r.jina.ai を使うホスト
+JINA_FIRST_HOSTS = (
+    "twitter.com",
+    "x.com",
+    "mobile.twitter.com",
+    "nitter.net",
 )
 
 # 要約の分量。ここを変えると記事全体のボリュームが変わる
@@ -182,8 +199,20 @@ def select_bookmarks(entries: Iterable, target: date) -> list[Bookmark]:
 # 記事本文
 # --------------------------------------------------------------------------
 
-def fetch_article_text(url: str) -> str | None:
-    """記事のメイン本文を抽出する。取得できなければ None"""
+def _host_of(url: str) -> str:
+    """URLのホスト名を小文字で返す（www. は落とす）"""
+    host = urlparse(url).hostname or ""
+    return host.lower().removeprefix("www.")
+
+
+def prefers_jina(url: str) -> bool:
+    """直接取得を飛ばして r.jina.ai を先に使うべきURLか"""
+    host = _host_of(url)
+    return any(host == known or host.endswith(f".{known}") for known in JINA_FIRST_HOSTS)
+
+
+def fetch_article_text_direct(url: str) -> str | None:
+    """記事のHTMLを直接取得して本文を抽出する。取得できなければ None"""
     try:
         response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT_SEC)
         response.raise_for_status()
@@ -212,6 +241,55 @@ def fetch_article_text(url: str) -> str | None:
     except Exception as e:  # noqa: BLE001 - 1記事の失敗で全体を止めない
         logger.error("Error extracting content from %s: %s", url, e)
         return None
+
+
+def fetch_article_text_via_jina(url: str) -> str | None:
+    """r.jina.ai 経由でレンダリング済みのテキストを取得する。取得できなければ None
+
+    JINA_API_KEY があれば付与する（レート制限が緩くなる）。無くても動く。
+    """
+    reader_url = JINA_READER_PREFIX + url
+    headers = {
+        "User-Agent": USER_AGENT,
+        # Markdownのリンクや画像記法は要約に不要なので、プレーンテキストで受け取る
+        "X-Return-Format": "text",
+    }
+    api_key = os.getenv("JINA_API_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        response = requests.get(reader_url, headers=headers, timeout=JINA_TIMEOUT_SEC)
+        response.raise_for_status()
+
+        text = re.sub(r"\s+", " ", str(response.text or "")).strip()
+        if not text:
+            logger.warning("No content extracted via r.jina.ai from %s", url)
+            return None
+        return text[:ARTICLE_TEXT_LIMIT]
+
+    except Exception as e:  # noqa: BLE001 - 1記事の失敗で全体を止めない
+        logger.error("Error extracting content via r.jina.ai from %s: %s", url, e)
+        return None
+
+
+def fetch_article_text(url: str) -> str | None:
+    """記事の本文テキストを取得する。取得できなければ None
+
+    通常はHTMLを直接取得して抽出するが、Twitter/X のようにJavaScriptで描画されるサイトは
+    本文が取れない（あるいはログイン誘導だけが取れる）ため、r.jina.ai にフォールバックする。
+    """
+    if prefers_jina(url):
+        logger.info("Using r.jina.ai for %s", url)
+        text = fetch_article_text_via_jina(url)
+        return text if text else fetch_article_text_direct(url)
+
+    text = fetch_article_text_direct(url)
+    if text and len(text) >= MIN_ARTICLE_TEXT_CHARS:
+        return text
+
+    logger.info("Falling back to r.jina.ai for %s", url)
+    return fetch_article_text_via_jina(url) or text
 
 
 # --------------------------------------------------------------------------

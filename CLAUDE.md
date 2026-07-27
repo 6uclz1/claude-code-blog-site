@@ -167,8 +167,15 @@ between stages:
 1. **RSS Processing**: `fetch_entries()` + `select_bookmarks()` — collects every date an entry
    carries (dc_date, entry-id URL pattern, published_parsed) and keeps the ones matching the
    target day, de-duplicating by URL
-2. **Content Extraction**: `fetch_article_text()` scrapes the article with BeautifulSoup using
-   fallback selectors; returns `None` when nothing usable is found (the entry is then skipped)
+2. **Content Extraction**: `fetch_article_text()` picks between two fetchers and returns `None`
+   when neither yields text (the entry is then skipped):
+   - `fetch_article_text_direct()` scrapes the HTML with BeautifulSoup using fallback selectors
+   - `fetch_article_text_via_jina()` fetches `https://r.jina.ai/<url>` for rendered text
+
+   Twitter/X (`JINA_FIRST_HOSTS`) is JavaScript-rendered and shows a login wall, so direct
+   scraping returns nothing usable — those hosts go through r.jina.ai first and fall back to
+   direct. Every other host is scraped directly first and falls back to r.jina.ai when the
+   result is missing or shorter than `MIN_ARTICLE_TEXT_CHARS` (cookie banners, login prompts).
 3. **AI Summarization**: `GeminiSummarizer.summarize()` asks Gemini for JSON
    (`{"summary": ..., "points": [...]}`) via `response_mime_type: application/json`, and
    `parse_digest()` normalizes/truncates it — prompt wording alone doesn't keep the length stable
@@ -198,6 +205,8 @@ writing it — useful for checking the output length after a prompt change.
 
 ### Environment Variables Required
 - `GEMINI_API_KEY`: Required for AI summarization in GitHub Actions (not needed for tests)
+- `JINA_API_KEY`: Optional. Sent as a bearer token to r.jina.ai to relax its rate limit;
+  the reader works anonymously without it
 
 ## Development Notes
 

@@ -18,6 +18,8 @@ services:
     command: tail -f /dev/null
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # 任意。設定すると r.jina.ai のレート制限が緩和される（未設定でも動作する）
+      - JINA_API_KEY=${JINA_API_KEY:-}
 
 volumes:
   node_modules:

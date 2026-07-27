@@ -25,9 +25,12 @@ from scripts.fetch_and_summarize import (  # noqa: E402
     Digest,
     GeminiSummarizer,
     fetch_article_text,
+    fetch_article_text_direct,
+    fetch_article_text_via_jina,
     fetch_entries,
     parse_digest,
     post_path,
+    prefers_jina,
     render_post,
     run,
     select_bookmarks,
@@ -130,17 +133,23 @@ class TestSelectBookmarks(unittest.TestCase):
         self.assertEqual(len(result), 1)
 
 
-class TestFetchArticleText(unittest.TestCase):
+def html_response(body: bytes) -> Mock:
+    return Mock(content=body, apparent_encoding='utf-8')
+
+
+def long_article_html(marker: str = 'main content') -> bytes:
+    filler = ('本文のテキストです。' * 40).encode()
+    return (b'<html><body><article><h1>Test Article</h1><p>This is the '
+            + marker.encode() + b'.</p><p>' + filler + b'</p></article></body></html>')
+
+
+class TestFetchArticleTextDirect(unittest.TestCase):
 
     @patch('scripts.fetch_and_summarize.requests')
     def test_success(self, mock_requests):
-        mock_requests.get.return_value = Mock(
-            content=b'<html><body><article><h1>Test Article</h1>'
-                    b'<p>This is the main content.</p></article></body></html>',
-            apparent_encoding='utf-8',
-        )
+        mock_requests.get.return_value = html_response(long_article_html())
 
-        result = fetch_article_text('https://example.com/test')
+        result = fetch_article_text_direct('https://example.com/test')
 
         self.assertIn('Test Article', result)
         self.assertIn('main content', result)
@@ -150,14 +159,124 @@ class TestFetchArticleText(unittest.TestCase):
     def test_error_returns_none(self, mock_requests):
         mock_requests.get.side_effect = Exception("Request failed")
 
-        self.assertIsNone(fetch_article_text('https://example.com/test'))
+        self.assertIsNone(fetch_article_text_direct('https://example.com/test'))
 
     @patch('scripts.fetch_and_summarize.requests')
     def test_empty_body_returns_none(self, mock_requests):
-        mock_requests.get.return_value = Mock(content=b'<html><body></body></html>',
-                                              apparent_encoding='utf-8')
+        mock_requests.get.return_value = html_response(b'<html><body></body></html>')
 
-        self.assertIsNone(fetch_article_text('https://example.com/test'))
+        self.assertIsNone(fetch_article_text_direct('https://example.com/test'))
+
+
+class TestFetchArticleTextViaJina(unittest.TestCase):
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch('scripts.fetch_and_summarize.requests')
+    def test_prefixes_reader_url_and_returns_text(self, mock_requests):
+        mock_requests.get.return_value = Mock(text='  ツイート本文\n\nです  ')
+
+        result = fetch_article_text_via_jina('https://x.com/user/status/123')
+
+        self.assertEqual(result, 'ツイート本文 です')
+        called_url = mock_requests.get.call_args[0][0]
+        self.assertEqual(called_url, 'https://r.jina.ai/https://x.com/user/status/123')
+        self.assertNotIn('Authorization', mock_requests.get.call_args[1]['headers'])
+
+    @patch.dict(os.environ, {'JINA_API_KEY': 'secret-token'}, clear=True)
+    @patch('scripts.fetch_and_summarize.requests')
+    def test_sends_api_key_when_available(self, mock_requests):
+        mock_requests.get.return_value = Mock(text='本文')
+
+        fetch_article_text_via_jina('https://x.com/user/status/123')
+
+        headers = mock_requests.get.call_args[1]['headers']
+        self.assertEqual(headers['Authorization'], 'Bearer secret-token')
+
+    @patch('scripts.fetch_and_summarize.requests')
+    def test_empty_returns_none(self, mock_requests):
+        mock_requests.get.return_value = Mock(text='   ')
+
+        self.assertIsNone(fetch_article_text_via_jina('https://x.com/user/status/123'))
+
+    @patch('scripts.fetch_and_summarize.requests')
+    def test_error_returns_none(self, mock_requests):
+        mock_requests.get.side_effect = Exception("Request failed")
+
+        self.assertIsNone(fetch_article_text_via_jina('https://x.com/user/status/123'))
+
+
+class TestPrefersJina(unittest.TestCase):
+
+    def test_twitter_and_x_use_jina_first(self):
+        for url in (
+            'https://x.com/user/status/1',
+            'https://twitter.com/user/status/1',
+            'https://mobile.twitter.com/user/status/1',
+            'https://www.x.com/user/status/1',
+        ):
+            self.assertTrue(prefers_jina(url), url)
+
+    def test_other_hosts_do_not(self):
+        for url in ('https://example.com/x.com', 'https://notx.com/a', 'https://example.com/'):
+            self.assertFalse(prefers_jina(url), url)
+
+
+class TestFetchArticleText(unittest.TestCase):
+
+    @patch('scripts.fetch_and_summarize.fetch_article_text_via_jina')
+    @patch('scripts.fetch_and_summarize.fetch_article_text_direct')
+    def test_normal_url_uses_direct_only(self, mock_direct, mock_jina):
+        mock_direct.return_value = 'あ' * 500
+
+        result = fetch_article_text('https://example.com/test')
+
+        self.assertEqual(result, 'あ' * 500)
+        mock_jina.assert_not_called()
+
+    @patch('scripts.fetch_and_summarize.fetch_article_text_via_jina')
+    @patch('scripts.fetch_and_summarize.fetch_article_text_direct')
+    def test_falls_back_to_jina_when_direct_fails(self, mock_direct, mock_jina):
+        mock_direct.return_value = None
+        mock_jina.return_value = 'r.jina.ai の本文'
+
+        self.assertEqual(fetch_article_text('https://example.com/test'), 'r.jina.ai の本文')
+        mock_jina.assert_called_once_with('https://example.com/test')
+
+    @patch('scripts.fetch_and_summarize.fetch_article_text_via_jina')
+    @patch('scripts.fetch_and_summarize.fetch_article_text_direct')
+    def test_falls_back_to_jina_when_direct_is_too_short(self, mock_direct, mock_jina):
+        mock_direct.return_value = 'ログインしてください'
+        mock_jina.return_value = 'r.jina.ai の本文'
+
+        self.assertEqual(fetch_article_text('https://example.com/test'), 'r.jina.ai の本文')
+
+    @patch('scripts.fetch_and_summarize.fetch_article_text_via_jina')
+    @patch('scripts.fetch_and_summarize.fetch_article_text_direct')
+    def test_keeps_short_direct_text_when_jina_fails(self, mock_direct, mock_jina):
+        mock_direct.return_value = '短い本文'
+        mock_jina.return_value = None
+
+        self.assertEqual(fetch_article_text('https://example.com/test'), '短い本文')
+
+    @patch('scripts.fetch_and_summarize.fetch_article_text_via_jina')
+    @patch('scripts.fetch_and_summarize.fetch_article_text_direct')
+    def test_twitter_uses_jina_first(self, mock_direct, mock_jina):
+        mock_jina.return_value = 'ツイート本文'
+
+        result = fetch_article_text('https://x.com/user/status/123')
+
+        self.assertEqual(result, 'ツイート本文')
+        mock_direct.assert_not_called()
+
+    @patch('scripts.fetch_and_summarize.fetch_article_text_via_jina')
+    @patch('scripts.fetch_and_summarize.fetch_article_text_direct')
+    def test_twitter_falls_back_to_direct(self, mock_direct, mock_jina):
+        mock_jina.return_value = None
+        mock_direct.return_value = 'HTMLから取れた本文'
+
+        result = fetch_article_text('https://x.com/user/status/123')
+
+        self.assertEqual(result, 'HTMLから取れた本文')
 
 
 class TestParseDigest(unittest.TestCase):
