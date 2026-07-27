@@ -25,9 +25,14 @@ jobs:
   # Build job
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -42,7 +47,7 @@ jobs:
       # ビルドが成功しても記事が壊れたまま公開されることがあるため、
       # ビルドログと feed.xml を検査してから公開する
       - name: Validate build output
-        run: python3 scripts/validate_build.py --log build.log --feed dist/feed.xml --min-entries 1
+        run: python scripts/validate_build.py --log build.log --feed dist/feed.xml --min-entries 1
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -64,6 +69,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: build
     steps:
       - name: Deploy to GitHub Pages

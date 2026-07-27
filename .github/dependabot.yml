@@ -1,0 +1,26 @@
+version: 2
+
+# 無人で毎日動くリポジトリなので、依存の更新漏れに気づけるようにする。
+# 特に requirements.txt は pin が古いまま放置され、SDKの仕様変更に
+# 気づけない状態になっていた。
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'ci'
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'deps'
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'deps'
