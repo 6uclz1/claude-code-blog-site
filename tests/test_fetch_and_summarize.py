@@ -1,390 +1,432 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import unittest
-from unittest.mock import Mock, patch, mock_open, MagicMock
+import json
 import os
 import re
 import sys
-from datetime import datetime, date, timedelta
+import unittest
+from datetime import date, datetime
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import Mock, patch
+
 import pytz
 import yaml
-import tempfile
-import shutil
 
 # テスト対象のモジュールをインポート
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from scripts.fetch_and_summarize import HatenaBookmarkSummarizer
+from scripts.fetch_and_summarize import (  # noqa: E402
+    MAX_POINTS,
+    POINT_MAX_CHARS,
+    SUMMARY_FALLBACK,
+    SUMMARY_MAX_CHARS,
+    Bookmark,
+    Digest,
+    GeminiSummarizer,
+    fetch_article_text,
+    fetch_entries,
+    parse_digest,
+    post_path,
+    render_post,
+    run,
+    select_bookmarks,
+    summarize_bookmarks,
+    write_post,
+    yesterday_in_jst,
+)
+
+JST = pytz.timezone('Asia/Tokyo')
 
 
-class TestHatenaBookmarkSummarizer(unittest.TestCase):
-    
-    def setUp(self):
-        """テストの前準備"""
-        # 環境変数を設定
-        os.environ['GEMINI_API_KEY'] = 'test_api_key'
-        
-        # Gemini APIをモック
-        self.gemini_patcher = patch('scripts.fetch_and_summarize.genai')
-        self.mock_genai = self.gemini_patcher.start()
-        
-        # モックモデルの設定
-        self.mock_model = Mock()
-        self.mock_genai.GenerativeModel.return_value = self.mock_model
-        
-        # テスト用のインスタンスを作成
-        self.summarizer = HatenaBookmarkSummarizer()
-        
-        # 一時ディレクトリを作成
-        self.temp_dir = tempfile.mkdtemp()
-        self.original_cwd = os.getcwd()
-        os.chdir(self.temp_dir)
-    
-    def tearDown(self):
-        """テストの後片付け"""
-        self.gemini_patcher.stop()
-        os.chdir(self.original_cwd)
-        shutil.rmtree(self.temp_dir)
-        if 'GEMINI_API_KEY' in os.environ:
-            del os.environ['GEMINI_API_KEY']
-    
-    def test_init_without_api_key(self):
-        """API キーが設定されていない場合のテスト"""
-        del os.environ['GEMINI_API_KEY']
-        
-        with self.assertRaises(SystemExit):
-            HatenaBookmarkSummarizer()
-    
-    def test_get_yesterday_date(self):
-        """昨日の日付取得のテスト"""
-        with patch('scripts.fetch_and_summarize.datetime') as mock_datetime:
-            # 2025-06-22 10:00:00 JST をモック
-            mock_now = datetime(2025, 6, 22, 10, 0, 0, tzinfo=pytz.timezone('Asia/Tokyo'))
-            mock_datetime.now.return_value = mock_now
-            
-            result = self.summarizer.get_yesterday_date()
-            expected = date(2025, 6, 21)
-            
-            self.assertEqual(result, expected)
-    
+def front_matter_of(markdown: str) -> dict:
+    match = re.match(r'\A---\n(.*?)\n---\n', markdown, re.S)
+    assert match is not None, "フロントマターが見つからない"
+    return yaml.safe_load(match.group(1))
+
+
+def body_of(markdown: str) -> str:
+    return markdown.split('\n---\n', 1)[1]
+
+
+class TestDates(unittest.TestCase):
+
+    def test_yesterday_in_jst(self):
+        now = JST.localize(datetime(2025, 6, 22, 10, 0, 0))
+        self.assertEqual(yesterday_in_jst(now), date(2025, 6, 21))
+
+    def test_yesterday_in_jst_uses_jst_not_utc(self):
+        """UTCではまだ前日でも、JSTの日付基準で判定する"""
+        now = JST.localize(datetime(2025, 6, 22, 8, 0, 0))
+        self.assertEqual(yesterday_in_jst(now), date(2025, 6, 21))
+
+
+class TestFetchEntries(unittest.TestCase):
+
     @patch('scripts.fetch_and_summarize.feedparser')
-    def test_fetch_rss_success(self, mock_feedparser):
-        """RSS取得成功のテスト"""
-        # モックのフィードデータ
-        mock_feed = Mock()
-        mock_feed.bozo = False
-        mock_feed.entries = [
-            {'title': 'Test Article 1', 'link': 'https://example.com/1'},
-            {'title': 'Test Article 2', 'link': 'https://example.com/2'}
-        ]
-        mock_feedparser.parse.return_value = mock_feed
-        
-        result = self.summarizer.fetch_rss()
-        
+    def test_success(self, mock_feedparser):
+        feed = Mock(bozo=False, entries=[{'title': 'A'}, {'title': 'B'}])
+        mock_feedparser.parse.return_value = feed
+
+        result = fetch_entries('https://example.com/rss')
+
         self.assertEqual(len(result), 2)
-        self.assertEqual(result[0]['title'], 'Test Article 1')
-        mock_feedparser.parse.assert_called_once_with(self.summarizer.rss_url)
-    
+        mock_feedparser.parse.assert_called_once_with('https://example.com/rss')
+
     @patch('scripts.fetch_and_summarize.feedparser')
-    def test_fetch_rss_error(self, mock_feedparser):
-        """RSS取得エラーのテスト"""
+    def test_error_returns_empty(self, mock_feedparser):
         mock_feedparser.parse.side_effect = Exception("Network error")
-        
-        result = self.summarizer.fetch_rss()
-        
-        self.assertEqual(result, [])
-    
-    def test_filter_yesterday_entries(self):
-        """昨日の記事フィルタリングのテスト"""
-        yesterday = date(2025, 6, 21)
-        yesterday_str = '20250621'
-        
-        # テストデータ
+
+        self.assertEqual(fetch_entries('https://example.com/rss'), [])
+
+
+class TestSelectBookmarks(unittest.TestCase):
+
+    def _entry(self, title, link='https://example.com/1', dc_date=None, entry_id=None,
+               published_parsed=None):
+        return Mock(title=title, link=link, dc_date=dc_date, id=entry_id,
+                    published_parsed=published_parsed)
+
+    def test_filters_by_dc_date_and_entry_id(self):
+        target = date(2025, 6, 21)
         entries = [
-            # 昨日の記事（dc_date使用）
-            Mock(
-                title='Yesterday Article 1',
-                dc_date='2025-06-21T08:42:35Z',
-                id=f'/Buchi_6uclz1/{yesterday_str}#bookmark-123'
-            ),
-            # 今日の記事
-            Mock(
-                title='Today Article',
-                dc_date='2025-06-22T08:42:35Z',
-                id='/Buchi_6uclz1/20250622#bookmark-456'
-            ),
-            # 昨日の記事（URLから日付抽出）
-            Mock(
-                title='Yesterday Article 2',
-                dc_date=None,
-                id=f'/Buchi_6uclz1/{yesterday_str}#bookmark-789'
-            )
+            self._entry('Yesterday 1', 'https://example.com/1',
+                        dc_date='2025-06-21T08:42:35Z', entry_id='/u/20250621#bookmark-1'),
+            self._entry('Today', 'https://example.com/2',
+                        dc_date='2025-06-22T08:42:35Z', entry_id='/u/20250622#bookmark-2'),
+            self._entry('Yesterday 2', 'https://example.com/3',
+                        dc_date=None, entry_id='/u/20250621#bookmark-3'),
         ]
-        
-        with patch.object(self.summarizer, 'get_yesterday_date', return_value=yesterday):
-            result = self.summarizer.filter_yesterday_entries(entries)
-        
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result[0].title, 'Yesterday Article 1')
-        self.assertEqual(result[1].title, 'Yesterday Article 2')
-    
+
+        result = select_bookmarks(entries, target)
+
+        self.assertEqual([b.title for b in result], ['Yesterday 1', 'Yesterday 2'])
+        self.assertEqual(result[0].url, 'https://example.com/1')
+
+    def test_falls_back_to_published_parsed(self):
+        entry = self._entry('Published only', dc_date=None, entry_id=None,
+                            published_parsed=(2025, 6, 20, 23, 30, 0, 0, 0, 0))  # UTC → JST で21日
+
+        result = select_bookmarks([entry], date(2025, 6, 21))
+
+        self.assertEqual([b.title for b in result], ['Published only'])
+
+    def test_skips_entries_without_date_or_link(self):
+        entries = [
+            self._entry('No date', dc_date=None, entry_id=None, published_parsed=None),
+            self._entry('No link', link='', dc_date='2025-06-21T08:42:35Z'),
+        ]
+
+        self.assertEqual(select_bookmarks(entries, date(2025, 6, 21)), [])
+
+    def test_deduplicates_same_url(self):
+        entries = [
+            self._entry('A', 'https://example.com/same', dc_date='2025-06-21T01:00:00Z'),
+            self._entry('A (再ブクマ)', 'https://example.com/same', dc_date='2025-06-21T02:00:00Z'),
+        ]
+
+        result = select_bookmarks(entries, date(2025, 6, 21))
+
+        self.assertEqual(len(result), 1)
+
+
+class TestFetchArticleText(unittest.TestCase):
+
     @patch('scripts.fetch_and_summarize.requests')
-    def test_extract_article_content_success(self, mock_requests):
-        """記事内容抽出成功のテスト"""
-        # モックのHTMLレスポンス
-        mock_response = Mock()
-        mock_response.content = b'''
-        <html>
-            <body>
-                <article>
-                    <h1>Test Article</h1>
-                    <p>This is the main content of the article.</p>
-                    <p>More content here.</p>
-                </article>
-            </body>
-        </html>
-        '''
-        mock_response.apparent_encoding = 'utf-8'
-        mock_requests.get.return_value = mock_response
-        
-        result = self.summarizer.extract_article_content('https://example.com/test')
-        
+    def test_success(self, mock_requests):
+        mock_requests.get.return_value = Mock(
+            content=b'<html><body><article><h1>Test Article</h1>'
+                    b'<p>This is the main content.</p></article></body></html>',
+            apparent_encoding='utf-8',
+        )
+
+        result = fetch_article_text('https://example.com/test')
+
         self.assertIn('Test Article', result)
         self.assertIn('main content', result)
         mock_requests.get.assert_called_once()
-    
-    @patch('scripts.fetch_and_summarize.requests')
-    def test_extract_article_content_error(self, mock_requests):
-        """記事内容抽出エラーのテスト"""
-        mock_requests.get.side_effect = Exception("Request failed")
-        
-        result = self.summarizer.extract_article_content('https://example.com/test')
-        
-        self.assertEqual(result, "コンテンツの取得に失敗しました")
-    
-    def test_summarize_with_gemini_success(self):
-        """Gemini要約生成成功のテスト"""
-        # モックの応答（50文字以上にする）
-        mock_response = Mock()
-        mock_response.text = "これはテスト記事の要約です。主要なポイントを説明しています。詳細な技術的内容が含まれており、実装方法についても説明されています。"
-        self.mock_model.generate_content.return_value = mock_response
-        
-        result = self.summarizer.summarize_with_gemini(
-            "Test Title",
-            "https://example.com/test",
-            "Test content here"
-        )
-        
-        self.assertEqual(result, "これはテスト記事の要約です。主要なポイントを説明しています。詳細な技術的内容が含まれており、実装方法についても説明されています。")
-        self.mock_model.generate_content.assert_called_once()
-    
-    def test_summarize_with_gemini_short_response(self):
-        """Gemini要約が短すぎる場合のテスト"""
-        # 短い応答をモック
-        mock_response = Mock()
-        mock_response.text = "短い"
-        self.mock_model.generate_content.return_value = mock_response
-        
-        result = self.summarizer.summarize_with_gemini(
-            "Test Title",
-            "https://example.com/test",
-            "Test content"
-        )
-        
-        self.assertIn("Test Title", result)
-        self.assertIn("について説明しています", result)
-    
-    def test_summarize_with_gemini_error(self):
-        """Gemini要約生成エラーのテスト"""
-        self.mock_model.generate_content.side_effect = Exception("API Error")
-        
-        result = self.summarizer.summarize_with_gemini(
-            "Test Title",
-            "https://example.com/test", 
-            "Test content"
-        )
-        
-        self.assertIn("Test Title", result)
-        self.assertIn("要約の生成に失敗しました", result)
-    
-    def test_create_daily_markdown_post_success(self):
-        """一日分Markdownファイル作成成功のテスト"""
-        entries_summaries = [
-            ({'title': 'Test Article 1', 'url': 'https://example.com/1'}, 'Test summary 1 with more detailed content to make it longer than 200 characters for excerpt test'),
-            ({'title': 'Test Article 2', 'url': 'https://example.com/2'}, 'Test summary 2')
-        ]
-        
-        # _postsディレクトリを作成
-        os.makedirs('_posts', exist_ok=True)
-        
-        result = self.summarizer.create_daily_markdown_post(
-            entries_summaries, 
-            date(2025, 6, 21)
-        )
-        
-        self.assertEqual(result, 1)
-        
-        # ファイルが作成されたかチェック
-        expected_file = '_posts/2025-06-21-hatena-bookmarks.md'
-        self.assertTrue(os.path.exists(expected_file))
-        
-        # ファイル内容をチェック
-        with open(expected_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-            self.assertIn('はてなブックマーク 2025年06月21日 の記事まとめ (2件)', content)
-            self.assertIn('Test Article 1', content)
-            self.assertIn('Test Article 2', content)
-            self.assertIn('Test summary 1', content)
-            self.assertIn('Test summary 2', content)
-            self.assertIn('## 1. Test Article 1', content)
-            self.assertIn('## 2. Test Article 2', content)
-            # 日付フォーマットが適切かチェック（現在時刻ベース）
-            import re
-            date_pattern = r'date: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \+\d{4}'
-            self.assertRegex(content, date_pattern, "Date format should include current timestamp")
-    
-    def test_create_daily_markdown_post_front_matter_is_valid_yaml(self):
-        """タイトルや要約に " や \\ が含まれてもフロントマターが壊れないテスト
 
-        フロントマターが壊れるとJekyllが記事を読み込めず、
+    @patch('scripts.fetch_and_summarize.requests')
+    def test_error_returns_none(self, mock_requests):
+        mock_requests.get.side_effect = Exception("Request failed")
+
+        self.assertIsNone(fetch_article_text('https://example.com/test'))
+
+    @patch('scripts.fetch_and_summarize.requests')
+    def test_empty_body_returns_none(self, mock_requests):
+        mock_requests.get.return_value = Mock(content=b'<html><body></body></html>',
+                                              apparent_encoding='utf-8')
+
+        self.assertIsNone(fetch_article_text('https://example.com/test'))
+
+
+class TestParseDigest(unittest.TestCase):
+
+    def test_parses_json(self):
+        digest = parse_digest('{"summary": "要点を1行で。", "points": ["補足A", "補足B"]}')
+
+        self.assertEqual(digest.summary, '要点を1行で。')
+        self.assertEqual(digest.points, ('補足A', '補足B'))
+
+    def test_parses_fenced_json(self):
+        digest = parse_digest('```json\n{"summary": "フェンス付き。", "points": []}\n```')
+
+        self.assertEqual(digest.summary, 'フェンス付き。')
+        self.assertEqual(digest.points, ())
+
+    def test_truncates_long_summary_and_points(self):
+        digest = parse_digest(json.dumps({
+            'summary': 'あ' * (SUMMARY_MAX_CHARS + 200),
+            'points': ['い' * (POINT_MAX_CHARS + 50)],
+        }))
+
+        self.assertLessEqual(len(digest.summary), SUMMARY_MAX_CHARS)
+        self.assertLessEqual(len(digest.points[0]), POINT_MAX_CHARS)
+
+    def test_truncation_prefers_sentence_boundary(self):
+        text = 'あ' * (SUMMARY_MAX_CHARS - 20) + '。' + 'い' * 50
+        digest = parse_digest('{"summary": "%s", "points": []}' % text)
+
+        self.assertTrue(digest.summary.endswith('。'))
+        self.assertLessEqual(len(digest.summary), SUMMARY_MAX_CHARS)
+
+    def test_caps_number_of_points(self):
+        points = ', '.join('"点%d"' % i for i in range(MAX_POINTS + 3))
+        digest = parse_digest('{"summary": "まとめ。", "points": [%s]}' % points)
+
+        self.assertEqual(len(digest.points), MAX_POINTS)
+
+    def test_strips_bullet_markers_and_emphasis(self):
+        digest = parse_digest('{"summary": "まとめ。", "points": ["- **強調**された点"]}')
+
+        self.assertEqual(digest.points, ('強調された点',))
+
+    def test_falls_back_to_first_line_when_not_json(self):
+        digest = parse_digest('要点はこれです。\n\n続きの説明。')
+
+        self.assertEqual(digest.summary, '要点はこれです。')
+        self.assertEqual(digest.points, ())
+
+    def test_empty_response_uses_fallback(self):
+        self.assertEqual(parse_digest('').summary, SUMMARY_FALLBACK)
+
+
+class TestGeminiSummarizer(unittest.TestCase):
+
+    def setUp(self):
+        patcher = patch('scripts.fetch_and_summarize.genai')
+        self.mock_genai = patcher.start()
+        self.addCleanup(patcher.stop)
+        self.mock_model = Mock()
+        self.mock_genai.GenerativeModel.return_value = self.mock_model
+        self.summarizer = GeminiSummarizer('test_api_key')
+        self.bookmark = Bookmark(title='Test Title', url='https://example.com/test')
+
+    def test_summarize_success(self):
+        self.mock_model.generate_content.return_value = Mock(
+            text='{"summary": "短い要約。", "points": ["点1"]}')
+
+        digest = self.summarizer.summarize(self.bookmark, '記事本文')
+
+        self.assertEqual(digest, Digest(summary='短い要約。', points=('点1',)))
+        prompt = self.mock_model.generate_content.call_args[0][0]
+        self.assertIn('Test Title', prompt)
+        self.assertIn('記事本文', prompt)
+
+    def test_summarize_requests_json_output(self):
+        self.mock_model.generate_content.return_value = Mock(text='{"summary": "x", "points": []}')
+
+        self.summarizer.summarize(self.bookmark, '記事本文')
+
+        config = self.mock_model.generate_content.call_args.kwargs['generation_config']
+        self.assertEqual(config['response_mime_type'], 'application/json')
+
+    def test_summarize_error_uses_fallback(self):
+        self.mock_model.generate_content.side_effect = Exception("API Error")
+
+        digest = self.summarizer.summarize(self.bookmark, '記事本文')
+
+        self.assertEqual(digest.summary, SUMMARY_FALLBACK)
+        self.assertEqual(digest.points, ())
+
+
+class TestRenderPost(unittest.TestCase):
+
+    def setUp(self):
+        self.digests = [
+            (Bookmark('Test Article 1', 'https://example.com/1'),
+             Digest('1本目の要約。', ('点A', '点B'))),
+            (Bookmark('Test Article 2', 'https://example.com/2'), Digest('2本目の要約。')),
+        ]
+        self.target = date(2025, 6, 21)
+        self.published = JST.localize(datetime(2025, 6, 22, 8, 30, 0))
+
+    def test_front_matter(self):
+        fm = front_matter_of(render_post(self.digests, self.target, self.published))
+
+        self.assertEqual(fm['title'], 'はてなブックマーク 2025年06月21日 の記事まとめ (2件)')
+        self.assertEqual(fm['date'], '2025-06-22 08:30:00 +0900')
+        # パーマリンクはブックマーク日から生成する。
+        # date は実行時刻（翌朝）なので、date 任せだとURLが翌日にずれて衝突する。
+        self.assertEqual(fm['permalink'], '/2025/06/21/hatena-bookmarks/')
+
+    def test_excerpt_is_one_line(self):
+        fm = front_matter_of(render_post(self.digests, self.target, self.published))
+
+        self.assertNotIn('\n', fm['excerpt'].strip())
+        self.assertIn('2件', fm['excerpt'])
+
+    def test_body_links_title_and_lists_points(self):
+        body = body_of(render_post(self.digests, self.target, self.published))
+
+        self.assertIn('## [Test Article 1](https://example.com/1)', body)
+        self.assertIn('## [Test Article 2](https://example.com/2)', body)
+        self.assertIn('1本目の要約。', body)
+        self.assertIn('- 点A', body)
+        self.assertIn('- 点B', body)
+
+    def test_body_stays_short(self):
+        """朝にパラッと読める分量（1件あたり数行）に収まっていること"""
+        body = body_of(render_post(self.digests, self.target, self.published))
+
+        self.assertLess(len(body), 600)
+        self.assertNotIn('### AI要約', body)
+        self.assertNotIn('詳細な要約', body)
+
+    def test_front_matter_is_valid_yaml_with_quotes_and_backslashes(self):
+        """タイトルに " や \\ が含まれてもフロントマターが壊れないテスト
+
+        フロントマターが壊れるとAstroが記事を読み込めず、
         RSSからその日の記事が消える（タイトルなしの記事が混入する）。
         """
-        entries_summaries = [
-            ({'title': 'Skillsは"業務マニュアル付きの道具箱"', 'url': 'https://example.com/1'},
-             'AIに "賭ける" 話。' + 'あ' * 100),
-            ({'title': 'パス C:\\Users\\test と : コロン', 'url': 'https://example.com/2'},
-             'バックスラッシュ \\ を含む要約。' + 'い' * 100),
+        digests = [
+            (Bookmark('Skillsは"業務マニュアル付きの道具箱"', 'https://example.com/1'),
+             Digest('AIに "賭ける" 話。')),
+            (Bookmark('パス C:\\Users\\test と : コロン', 'https://example.com/2'),
+             Digest('バックスラッシュ \\ を含む要約。')),
         ]
 
-        os.makedirs('_posts', exist_ok=True)
-        self.assertEqual(
-            self.summarizer.create_daily_markdown_post(entries_summaries, date(2025, 6, 21)), 1)
+        markdown = render_post(digests, self.target, self.published)
+        fm = front_matter_of(markdown)
 
-        with open('_posts/2025-06-21-hatena-bookmarks.md', encoding='utf-8') as f:
-            content = f.read()
+        self.assertIsInstance(fm, dict)
+        self.assertIn('2025年06月21日', fm['title'])
+        self.assertIn('Skillsは"業務マニュアル付きの道具箱"', body_of(markdown))
 
-        match = re.match(r'\A---\n(.*?)\n---\n', content, re.S)
-        self.assertIsNotNone(match, "フロントマターが見つからない")
-
-        front_matter = yaml.safe_load(match.group(1))
-        self.assertIsInstance(front_matter, dict)
-        self.assertIn('2025年06月21日', front_matter['title'])
-        self.assertIn('Skillsは"業務マニュアル付きの道具箱"', front_matter['excerpt'])
-        self.assertIn('パス C:\\Users\\test と : コロン', front_matter['excerpt'])
-
-    def test_create_daily_markdown_post_permalink_uses_bookmark_date(self):
-        """パーマリンクがブックマーク日から生成されるテスト
-
-        dateは実行時刻（翌朝）なので、パーマリンクをdate任せにすると
-        ビルド環境のタイムゾーン次第でURLが翌日にずれ、翌日分と衝突する。
-        """
-        entries_summaries = [
-            ({'title': 'Test Article', 'url': 'https://example.com'}, 'Test summary')
-        ]
-
-        os.makedirs('_posts', exist_ok=True)
-        self.summarizer.create_daily_markdown_post(entries_summaries, date(2025, 6, 21))
-
-        with open('_posts/2025-06-21-hatena-bookmarks.md', encoding='utf-8') as f:
-            front_matter = yaml.safe_load(re.match(r'\A---\n(.*?)\n---\n', f.read(), re.S).group(1))
-
-        self.assertEqual(front_matter['permalink'], '/2025/06/21/hatena-bookmarks/')
-
-    def test_create_daily_markdown_post_keeps_braces_as_is(self):
+    def test_keeps_braces_as_is(self):
         """本文中の波括弧がそのまま残るテスト
 
         Jekyll時代は {{ }} が Liquid として解釈されるため raw で囲んでいたが、
         Astro は .md をテンプレートとして評価しないためエスケープ不要。
         """
-        entries_summaries = [
-            ({'title': 'GitHub Actionsの${{ }}記法', 'url': 'https://example.com'},
-             '`${{ secrets.TOKEN }}` を直接展開しない。{% if %} も同様。')
+        digests = [
+            (Bookmark('GitHub Actionsの${{ }}記法', 'https://example.com'),
+             Digest('`${{ secrets.TOKEN }}` を直接展開しない。', ('{% if %} も同様',)))
         ]
 
-        os.makedirs('_posts', exist_ok=True)
-        self.summarizer.create_daily_markdown_post(entries_summaries, date(2025, 6, 21))
-
-        with open('_posts/2025-06-21-hatena-bookmarks.md', encoding='utf-8') as f:
-            body = f.read().split('\n---\n', 1)[1]
+        body = body_of(render_post(digests, self.target, self.published))
 
         self.assertIn('${{ secrets.TOKEN }}', body)
         self.assertIn('{% if %}', body)
         self.assertNotIn('{% raw %}', body)
 
-    def test_create_daily_markdown_post_no_entries(self):
-        """エントリがない場合のテスト"""
-        result = self.summarizer.create_daily_markdown_post([], date(2025, 6, 21))
-        
-        self.assertEqual(result, 0)
-    
-    def test_create_daily_markdown_post_file_exists(self):
-        """ファイルが既に存在する場合のテスト"""
-        entries_summaries = [
-            ({'title': 'Test Article', 'url': 'https://example.com'}, 'Test summary')
-        ]
-        
-        # _postsディレクトリを作成
-        os.makedirs('_posts', exist_ok=True)
-        
-        # 既存ファイルを作成
-        existing_file = '_posts/2025-06-21-hatena-bookmarks.md'
-        with open(existing_file, 'w', encoding='utf-8') as f:
-            f.write('existing content')
-        
-        result = self.summarizer.create_daily_markdown_post(
-            entries_summaries, 
-            date(2025, 6, 21)
-        )
-        
-        self.assertEqual(result, 0)  # 既存ファイルがあるため0件作成
-    
-    @patch.object(HatenaBookmarkSummarizer, 'fetch_rss')
-    @patch.object(HatenaBookmarkSummarizer, 'filter_yesterday_entries')
-    @patch.object(HatenaBookmarkSummarizer, 'extract_article_content')
-    @patch.object(HatenaBookmarkSummarizer, 'summarize_with_gemini')
-    @patch.object(HatenaBookmarkSummarizer, 'create_daily_markdown_post')
-    def test_run_success(self, mock_create_posts, mock_summarize, mock_extract, 
-                        mock_filter, mock_fetch):
-        """メイン処理の成功テスト"""
-        # モックの設定
-        mock_fetch.return_value = [Mock(title='Test', link='https://example.com')]
-        mock_filter.return_value = [Mock(title='Test', link='https://example.com')]
-        mock_extract.return_value = "Test content"
-        mock_summarize.return_value = "Test summary"
-        mock_create_posts.return_value = 1
-        
-        # 実行
-        self.summarizer.run()
-        
-        # 各メソッドが呼ばれたことを確認
-        mock_fetch.assert_called_once()
-        mock_filter.assert_called_once()
-        mock_extract.assert_called_once()
-        mock_summarize.assert_called_once()
-        mock_create_posts.assert_called_once()
-    
-    @patch.object(HatenaBookmarkSummarizer, 'fetch_rss')
-    def test_run_no_entries(self, mock_fetch):
-        """エントリがない場合のメイン処理テスト"""
-        mock_fetch.return_value = []
-        
-        # 実行（例外が発生しないことを確認）
-        self.summarizer.run()
-        
-        mock_fetch.assert_called_once()
-    
-    @patch.object(HatenaBookmarkSummarizer, 'fetch_rss')
-    @patch.object(HatenaBookmarkSummarizer, 'filter_yesterday_entries')
-    def test_run_no_yesterday_entries(self, mock_filter, mock_fetch):
-        """昨日のエントリがない場合のメイン処理テスト"""
+
+class TestWritePost(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.posts_dir = Path(self.tmp.name) / '_posts'
+        self.digests = [(Bookmark('Test Article', 'https://example.com'), Digest('要約。'))]
+        self.target = date(2025, 6, 21)
+
+    def test_creates_file(self):
+        self.assertTrue(write_post(self.digests, self.target, self.posts_dir))
+
+        path = post_path(self.target, self.posts_dir)
+        self.assertTrue(path.exists())
+        self.assertIn('Test Article', path.read_text(encoding='utf-8'))
+
+    def test_no_entries(self):
+        self.assertFalse(write_post([], self.target, self.posts_dir))
+
+    def test_existing_file_is_kept(self):
+        path = post_path(self.target, self.posts_dir)
+        path.parent.mkdir(parents=True)
+        path.write_text('existing content', encoding='utf-8')
+
+        self.assertFalse(write_post(self.digests, self.target, self.posts_dir))
+        self.assertEqual(path.read_text(encoding='utf-8'), 'existing content')
+
+
+class TestSummarizeBookmarks(unittest.TestCase):
+
+    @patch('scripts.fetch_and_summarize.fetch_article_text')
+    def test_skips_entries_without_content(self, mock_fetch):
+        mock_fetch.side_effect = ['本文あり', None]
+        summarizer = Mock()
+        summarizer.summarize.return_value = Digest('要約。')
+        bookmarks = [Bookmark('A', 'https://example.com/1'), Bookmark('B', 'https://example.com/2')]
+
+        result = summarize_bookmarks(bookmarks, summarizer, interval_sec=0)
+
+        self.assertEqual([b.title for b, _ in result], ['A'])
+        summarizer.summarize.assert_called_once()
+
+
+class TestRun(unittest.TestCase):
+
+    def setUp(self):
+        os.environ['GEMINI_API_KEY'] = 'test_api_key'
+        self.addCleanup(os.environ.pop, 'GEMINI_API_KEY', None)
+        patcher = patch('scripts.fetch_and_summarize.GeminiSummarizer')
+        self.mock_summarizer_cls = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_missing_api_key_exits(self):
+        del os.environ['GEMINI_API_KEY']
+
+        with self.assertRaises(SystemExit):
+            run()
+
+    @patch('scripts.fetch_and_summarize.write_post')
+    @patch('scripts.fetch_and_summarize.summarize_bookmarks')
+    @patch('scripts.fetch_and_summarize.select_bookmarks')
+    @patch('scripts.fetch_and_summarize.fetch_entries')
+    def test_success(self, mock_fetch, mock_select, mock_summarize, mock_write):
         mock_fetch.return_value = [Mock()]
-        mock_filter.return_value = []
-        
-        # 実行
-        self.summarizer.run()
-        
-        mock_fetch.assert_called_once()
-        mock_filter.assert_called_once()
+        mock_select.return_value = [Bookmark('A', 'https://example.com/1')]
+        mock_summarize.return_value = [(Bookmark('A', 'https://example.com/1'), Digest('要約。'))]
+        mock_write.return_value = True
+
+        self.assertEqual(run(date(2025, 6, 21)), 1)
+        mock_write.assert_called_once()
+
+    @patch('scripts.fetch_and_summarize.fetch_entries')
+    def test_no_entries(self, mock_fetch):
+        mock_fetch.return_value = []
+
+        self.assertEqual(run(date(2025, 6, 21)), 0)
+
+    @patch('scripts.fetch_and_summarize.select_bookmarks')
+    @patch('scripts.fetch_and_summarize.fetch_entries')
+    def test_no_entries_for_target_date(self, mock_fetch, mock_select):
+        mock_fetch.return_value = [Mock()]
+        mock_select.return_value = []
+
+        self.assertEqual(run(date(2025, 6, 21)), 0)
+
+    @patch('scripts.fetch_and_summarize.write_post')
+    @patch('scripts.fetch_and_summarize.summarize_bookmarks')
+    @patch('scripts.fetch_and_summarize.select_bookmarks')
+    @patch('scripts.fetch_and_summarize.fetch_entries')
+    def test_dry_run_does_not_write(self, mock_fetch, mock_select, mock_summarize, mock_write):
+        mock_fetch.return_value = [Mock()]
+        mock_select.return_value = [Bookmark('A', 'https://example.com/1')]
+        mock_summarize.return_value = [(Bookmark('A', 'https://example.com/1'), Digest('要約。'))]
+
+        self.assertEqual(run(date(2025, 6, 21), dry_run=True), 0)
+        mock_write.assert_not_called()
 
 
 if __name__ == '__main__':

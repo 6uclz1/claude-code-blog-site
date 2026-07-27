@@ -1,365 +1,496 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""はてなブックマークの前日分を Gemini で要約し、1本のまとめ記事を生成する。
 
+この記事は「朝にパラッと目を通す」ためのものなので、分量を絞ることを最優先にしている。
+1ブックマークあたり "1行サマリ + 箇条書き最大3点" に固定し、
+モデルの出力が長すぎる場合はスクリプト側で切り詰める（プロンプトだけでは長さが安定しないため）。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
 import os
+import re
 import sys
+import time
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Iterable, Sequence
+
 import feedparser
+import google.generativeai as genai
+import pytz
 import requests
 import yaml
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
-import pytz
-import google.generativeai as genai
-import re
-import time
-from urllib.parse import urljoin, urlparse
-import logging
 
-# ログ設定
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class HatenaBookmarkSummarizer:
-    def __init__(self):
-        self.rss_url = "https://b.hatena.ne.jp/Buchi_6uclz1/rss"
-        self.gemini_api_key = os.getenv('GEMINI_API_KEY')
-        
-        if not self.gemini_api_key:
-            logger.error("GEMINI_API_KEY environment variable is not set")
-            sys.exit(1)
-        
-        # Gemini API設定
-        genai.configure(api_key=self.gemini_api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash')
+RSS_URL = "https://b.hatena.ne.jp/Buchi_6uclz1/rss"
+GEMINI_MODEL = "gemini-2.5-flash"
+POSTS_DIR = Path("_posts")
+JST = pytz.timezone("Asia/Tokyo")
 
-        # 日本時間のタイムゾーン
-        self.jst = pytz.timezone('Asia/Tokyo')
-    
-    def get_yesterday_date(self):
-        """昨日の日付を日本時間で取得"""
-        now_jst = datetime.now(self.jst)
-        yesterday = now_jst - timedelta(days=1)
-        return yesterday.date()
-    
-    def fetch_rss(self):
-        """RSSフィードを取得"""
+# 記事本文の取得まわり
+HTTP_TIMEOUT_SEC = 15
+ARTICLE_TEXT_LIMIT = 3000
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+)
+CONTENT_SELECTORS = (
+    "article",
+    '[role="main"]',
+    ".entry-content",
+    ".post-content",
+    ".article-body",
+    ".content",
+    "main",
+    ".main-content",
+)
+
+# 要約の分量。ここを変えると記事全体のボリュームが変わる
+SUMMARY_MAX_CHARS = 120
+POINT_MAX_CHARS = 45
+MAX_POINTS = 3
+
+# Gemini のレート制限対策（記事ごとの待機）
+API_INTERVAL_SEC = 2
+
+SUMMARY_FALLBACK = "要約を生成できませんでした。詳しくは元記事をご覧ください。"
+
+
+@dataclass(frozen=True)
+class Bookmark:
+    """ブックマーク1件（RSSエントリから必要な情報だけ取り出したもの）"""
+
+    title: str
+    url: str
+
+
+@dataclass(frozen=True)
+class Digest:
+    """1件分の短い要約。summary は1行、points は箇条書き（最大 MAX_POINTS 件）"""
+
+    summary: str
+    points: tuple[str, ...] = ()
+
+
+# --------------------------------------------------------------------------
+# 日付
+# --------------------------------------------------------------------------
+
+def yesterday_in_jst(now: datetime | None = None) -> date:
+    """日本時間での「昨日」を返す"""
+    now_jst = now or datetime.now(JST)
+    return (now_jst - timedelta(days=1)).date()
+
+
+def _entry_dates_jst(entry) -> set[date]:
+    """エントリが持つ日付の候補をすべて集める
+
+    はてなのRSSは dc:date / エントリID（/user/20250620#bookmark-xxx）/ published が
+    それぞれ食い違うことがあるため、どれか1つでも対象日と一致すれば採用する。
+    """
+    candidates: set[date] = set()
+
+    dc_date = getattr(entry, "dc_date", None)
+    if dc_date:
         try:
-            logger.info(f"Fetching RSS from {self.rss_url}")
-            feed = feedparser.parse(self.rss_url)
-            
-            if feed.bozo:
-                logger.warning("Feed parsing had issues, but continuing...")
-            
-            return feed.entries
-        except Exception as e:
-            logger.error(f"Error fetching RSS: {e}")
-            return []
-    
-    def filter_yesterday_entries(self, entries):
-        """昨日の記事のみフィルタリング"""
-        yesterday = self.get_yesterday_date()
-        yesterday_str = yesterday.strftime('%Y%m%d')  # 20250619形式
-        yesterday_entries = []
-        
-        for entry in entries:
+            parsed = datetime.fromisoformat(str(dc_date).replace("Z", "+00:00"))
+            candidates.add(parsed.astimezone(JST).date())
+        except ValueError:
+            logger.debug("Unparsable dc:date: %r", dc_date)
+
+    entry_id = getattr(entry, "id", None)
+    if entry_id:
+        match = re.search(r"/(\d{8})#", str(entry_id))
+        if match:
             try:
-                # 1. dc:dateフィールドを使用（優先）
-                dc_date = getattr(entry, 'dc_date', None)
-                entry_date_jst = None
-                
-                if dc_date:
-                    # ISO形式の日付をパース（例: 2025-06-20T08:42:35Z）
-                    entry_date = datetime.fromisoformat(dc_date.replace('Z', '+00:00'))
-                    entry_date_jst = entry_date.astimezone(self.jst).date()
-                
-                # 2. 念のため、entryのIDやlinkからも日付を抽出を試行
-                # はてなブックマークのURLパターン: /Buchi_6uclz1/20250620#bookmark-xxx
-                date_from_url = None
-                if hasattr(entry, 'id') and entry.id:
-                    # entry.idから日付を抽出
-                    import re
-                    match = re.search(r'/(\d{8})#', entry.id)
-                    if match:
-                        date_from_url = match.group(1)
-                
-                # 3. dc_dateが利用できない場合はURLから抽出した日付を使用
-                if not entry_date_jst and date_from_url:
-                    try:
-                        url_date = datetime.strptime(date_from_url, '%Y%m%d')
-                        entry_date_jst = url_date.date()
-                    except:
-                        pass
-                
-                # 4. 最後の手段：published_parsedを使用
-                if not entry_date_jst and hasattr(entry, 'published_parsed') and entry.published_parsed:
-                    entry_date = datetime(*entry.published_parsed[:6], tzinfo=pytz.UTC)
-                    entry_date_jst = entry_date.astimezone(self.jst).date()
-                
-                # 日付が取得できない場合はスキップ
-                if not entry_date_jst:
-                    logger.warning(f"No date found for entry: {entry.get('title', 'Unknown')}")
-                    continue
-                
-                # 昨日の記事かチェック
-                if entry_date_jst == yesterday:
-                    yesterday_entries.append(entry)
-                    logger.info(f"Found yesterday's entry: {entry.title} (date: {entry_date_jst})")
-                
-                # URLから抽出した日付もチェック（dc:dateと異なる場合がある）
-                elif date_from_url == yesterday_str:
-                    yesterday_entries.append(entry)
-                    logger.info(f"Found yesterday's entry from URL: {entry.title} (URL date: {date_from_url})")
-                    
-            except Exception as e:
-                logger.warning(f"Error parsing date for entry {entry.get('title', 'Unknown')}: {e}")
-                continue
-        
-        logger.info(f"Found {len(yesterday_entries)} entries from yesterday")
-        return yesterday_entries
-    
-    def extract_article_content(self, url):
-        """記事のメイン内容を抽出"""
+                candidates.add(datetime.strptime(match.group(1), "%Y%m%d").date())
+            except ValueError:
+                logger.debug("Unparsable date in entry id: %r", entry_id)
+
+    published = getattr(entry, "published_parsed", None)
+    if published:
         try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            
-            response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()
-            response.encoding = response.apparent_encoding
-            
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # 不要な要素を削除
-            for element in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'advertisement']):
-                element.decompose()
-            
-            # メイン内容を抽出する候補セレクタ
-            content_selectors = [
-                'article',
-                '[role="main"]',
-                '.entry-content',
-                '.post-content',
-                '.article-body',
-                '.content',
-                'main',
-                '.main-content'
-            ]
-            
-            content = ""
-            for selector in content_selectors:
-                elements = soup.select(selector)
-                if elements:
-                    content = elements[0].get_text(strip=True)
-                    break
-            
-            # セレクタで見つからない場合は、body全体から抽出
-            if not content:
-                body = soup.find('body')
-                if body:
-                    content = body.get_text(strip=True)
-            
-            # 内容をクリーンアップ
-            content = re.sub(r'\s+', ' ', content)
-            content = content[:3000]  # 最大3000文字に制限
-            
-            return content if content else "コンテンツを取得できませんでした"
-            
-        except Exception as e:
-            logger.error(f"Error extracting content from {url}: {e}")
-            return "コンテンツの取得に失敗しました"
-    
-    def summarize_with_gemini(self, title, url, content):
-        """Gemini APIを使用して要約を生成"""
-        try:
-            prompt = f"""以下の記事を日本語で要約してください。
-まず、初めに要点を箇条書きで示し、その後に詳細な要約を提供してください。
-要点は、記事の重要なポイントを簡潔にまとめてください。
-詳細な要約は、記事の内容を正確に反映し、読者が理解しやすいようにしてください。
-特に、記事のテーマや目的、重要な情報を含めてください。
-記事の内容が技術的なものであれば、専門用語を避け、一般の読者にも理解できるようにしてください。
-要約は、記事の内容を正確に反映し、読者が興味を持てるようにしてください。
-要約の長さは、300文字以上500文字以内にしてください。
-記事の内容が長い場合は、重要なポイントを中心に要約してください。
-要約は読みやすく、興味深い内容にしてください。
-「はい」などの回答は行わず、記事に使用する文章のみを提供してください。
+            utc = datetime(*published[:6], tzinfo=pytz.UTC)
+            candidates.add(utc.astimezone(JST).date())
+        except (TypeError, ValueError):
+            logger.debug("Unparsable published_parsed: %r", published)
+
+    return candidates
+
+
+def _entry_title(entry) -> str:
+    return str(getattr(entry, "title", "") or "")
+
+
+# --------------------------------------------------------------------------
+# RSS
+# --------------------------------------------------------------------------
+
+def fetch_entries(rss_url: str = RSS_URL) -> list:
+    """RSSフィードのエントリを取得する（失敗時は空リスト）"""
+    try:
+        logger.info("Fetching RSS from %s", rss_url)
+        feed = feedparser.parse(rss_url)
+        if getattr(feed, "bozo", False):
+            logger.warning("Feed parsing had issues, but continuing...")
+        return list(feed.entries)
+    except Exception as e:  # noqa: BLE001 - RSS取得の失敗で全体を止めない
+        logger.error("Error fetching RSS: %s", e)
+        return []
+
+
+def select_bookmarks(entries: Iterable, target: date) -> list[Bookmark]:
+    """対象日のエントリを Bookmark に変換する（同一URLは先勝ちで重複排除）"""
+    bookmarks: list[Bookmark] = []
+    seen: set[str] = set()
+
+    for entry in entries:
+        title = _entry_title(entry)
+        url = str(getattr(entry, "link", "") or "")
+        if not url:
+            logger.warning("Skipping entry without link: %s", title or "Unknown")
+            continue
+
+        dates = _entry_dates_jst(entry)
+        if not dates:
+            logger.warning("No date found for entry: %s", title or "Unknown")
+            continue
+        if target not in dates:
+            continue
+        if url in seen:
+            logger.info("Skipping duplicated bookmark: %s", url)
+            continue
+
+        seen.add(url)
+        bookmarks.append(Bookmark(title=title, url=url))
+        logger.info("Found entry for %s: %s", target, title)
+
+    logger.info("Selected %d entries for %s", len(bookmarks), target)
+    return bookmarks
+
+
+# --------------------------------------------------------------------------
+# 記事本文
+# --------------------------------------------------------------------------
+
+def fetch_article_text(url: str) -> str | None:
+    """記事のメイン本文を抽出する。取得できなければ None"""
+    try:
+        response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT_SEC)
+        response.raise_for_status()
+        response.encoding = response.apparent_encoding
+
+        soup = BeautifulSoup(response.content, "html.parser")
+        for element in soup(["script", "style", "nav", "header", "footer", "aside"]):
+            element.decompose()
+
+        text = ""
+        for selector in CONTENT_SELECTORS:
+            elements = soup.select(selector)
+            if elements:
+                text = elements[0].get_text(" ", strip=True)
+                break
+        if not text:
+            body = soup.find("body")
+            text = body.get_text(" ", strip=True) if body else ""
+
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            logger.warning("No content extracted from %s", url)
+            return None
+        return text[:ARTICLE_TEXT_LIMIT]
+
+    except Exception as e:  # noqa: BLE001 - 1記事の失敗で全体を止めない
+        logger.error("Error extracting content from %s: %s", url, e)
+        return None
+
+
+# --------------------------------------------------------------------------
+# 要約
+# --------------------------------------------------------------------------
+
+PROMPT_TEMPLATE = """あなたは技術ブログの朝刊コーナーの編集者です。
+読者が出勤前に数十秒で全体を把握できるよう、次の記事を短くまとめてください。
+
+制約:
+- summary: 記事の要点を1文で。{summary_max}文字以内。体言止めや「〜する内容」のような要約調で簡潔に。
+- points: 補足したい具体的な情報を最大{max_points}個。各{point_max}文字以内の短い句。無ければ空配列。
+- 前置き・感想・元記事へのリンク案内は書かない。
+- 専門用語は必要な範囲で残しつつ、平易な日本語にする。
+
+次のJSONのみを出力してください:
+{{"summary": "...", "points": ["...", "..."]}}
 
 タイトル: {title}
 URL: {url}
 
 記事内容:
 {content}
+"""
 
-要約:"""
 
-            response = self.model.generate_content(prompt)
-            summary = response.text.strip()
-            
-            # 要約の長さをチェック
-            if len(summary) < 50:
-                return f"この記事は{title}について説明しています。詳細な内容については元記事をご確認ください。"
-            
-            return summary
-            
-        except Exception as e:
-            logger.error(f"Error generating summary with Gemini: {e}")
-            return f"この記事は「{title}」について書かれています。要約の生成に失敗しましたが、詳細は元記事をご確認ください。"
-    
+def _normalize(text: str) -> str:
+    """箇条書き記号や余分な空白・強調記法を落として1行にする"""
+    text = re.sub(r"\s+", " ", str(text)).strip()
+    text = re.sub(r"^[-*・•\d]+[.)]?\s*", "", text)
+    text = text.replace("**", "").strip()
+    return text
 
-    @staticmethod
-    def build_front_matter(front_matter):
-        """YAMLとして安全なフロントマターを生成する
 
-        タイトルや要約に含まれる " や \\ を手動で埋め込むとYAMLが壊れ、
-        Astroが記事を読み込めずRSSから記事が消えるため、必ずyaml.dumpを通す。
-        """
-        body = yaml.dump(
-            front_matter,
-            allow_unicode=True,
-            default_flow_style=False,
-            sort_keys=False,
-            width=10 ** 6,
+def _shorten(text: str, limit: int) -> str:
+    """limit 文字以内に収める。文の途中で切れないよう句点を優先する"""
+    text = _normalize(text)
+    if len(text) <= limit:
+        return text
+
+    head = text[:limit]
+    sentence_end = max(head.rfind("。"), head.rfind("！"), head.rfind("？"))
+    if sentence_end >= limit // 2:
+        return head[: sentence_end + 1]
+    # 末尾の「…」も1文字分なので、その分だけ短く切る
+    return text[: limit - 1].rstrip() + "…"
+
+
+def _extract_json(raw: str) -> dict | None:
+    """モデル出力からJSONオブジェクトを取り出す（```json フェンス付きにも対応）"""
+    text = raw.strip()
+    fenced = re.search(r"```(?:json)?\s*(.+?)```", text, re.S)
+    if fenced:
+        text = fenced.group(1).strip()
+    else:
+        start, end = text.find("{"), text.rfind("}")
+        if start != -1 and end > start:
+            text = text[start : end + 1]
+
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def parse_digest(raw: str) -> Digest:
+    """モデル出力を Digest に変換する。JSONで返らなかった場合は本文の先頭を使う"""
+    payload = _extract_json(raw) or {}
+
+    summary = _shorten(payload.get("summary", ""), SUMMARY_MAX_CHARS)
+    if not summary:
+        # JSONとして壊れていても、プレーンテキストの1行目が使えることが多い
+        first_line = next((line for line in raw.splitlines() if _normalize(line)), "")
+        summary = _shorten(first_line, SUMMARY_MAX_CHARS)
+
+    raw_points = payload.get("points") or []
+    if not isinstance(raw_points, list):
+        raw_points = [raw_points]
+
+    points: list[str] = []
+    for point in raw_points:
+        shortened = _shorten(point, POINT_MAX_CHARS)
+        if shortened and shortened != summary:
+            points.append(shortened)
+        if len(points) >= MAX_POINTS:
+            break
+
+    return Digest(summary=summary or SUMMARY_FALLBACK, points=tuple(points))
+
+
+class GeminiSummarizer:
+    """Gemini で1件分の短い要約を作る"""
+
+    def __init__(self, api_key: str, model_name: str = GEMINI_MODEL):
+        genai.configure(api_key=api_key)
+        self._model = genai.GenerativeModel(model_name)
+
+    def summarize(self, bookmark: Bookmark, article_text: str) -> Digest:
+        prompt = PROMPT_TEMPLATE.format(
+            summary_max=SUMMARY_MAX_CHARS,
+            point_max=POINT_MAX_CHARS,
+            max_points=MAX_POINTS,
+            title=bookmark.title,
+            url=bookmark.url,
+            content=article_text,
         )
-        return f"---\n{body}---\n"
-
-    def create_daily_markdown_post(self, entries_summaries, date):
-        """一日分のブックマークをまとめて一つのMarkdown記事を作成"""
-        if not entries_summaries:
-            logger.info("No entries to summarize, skipping post creation")
-            return 0
-        
-        # ファイル名生成：日付のみ
-        date_str = date.strftime('%Y-%m-%d')
-        filename = f"_posts/{date_str}-hatena-bookmarks.md"
-        
-        # ファイルが既に存在するかチェック
-        if os.path.exists(filename):
-            logger.info(f"Post already exists, skipping: {filename}")
-            return 0
-        
-        # 記事の公開日時は現在時刻を使用（RSS通知のため）
-        now_jst = datetime.now(self.jst)
-        publish_date_str = now_jst.strftime('%Y-%m-%d %H:%M:%S %z')
-        
-        # 記事数に応じたタイトル
-        article_count = len(entries_summaries)
-
-        excerpt = f"はてなブックマークで気になった記事をAIで要約してお届けします。{date.strftime('%Y年%m月%d日')}分の{article_count}件の記事をまとめました。\n"
-        
-        for i, (entry, summary) in enumerate(entries_summaries, 1):
-            logger.info(f"Entry {i}: {entry['title']} - {entry['url']}")
-            excerpt += f"\n- {entry['title']}\n"
-
-        # パーマリンクはブックマーク日から生成する。
-        # date は実行時刻（RSS通知のため翌朝）なので、ビルド環境のタイムゾーン次第で
-        # /:year/:month/:day/ が翌日にずれ、翌日分の記事とURLが衝突してしまう。
-        permalink = f"/{date.strftime('%Y/%m/%d')}/hatena-bookmarks/"
-
-        front_matter = self.build_front_matter({
-            'title': f"はてなブックマーク {date.strftime('%Y年%m月%d日')} の記事まとめ ({article_count}件)",
-            'date': publish_date_str,
-            'permalink': permalink,
-            'excerpt': excerpt,
-        })
-
-        content = f"""{front_matter}
-はてなブックマークで気になった記事をAIで要約してお届けします。
-{date.strftime('%Y年%m月%d日')}分の{article_count}件の記事をまとめました。
-
-"""
-
-        # 各記事を追加
-        for i, (entry, summary) in enumerate(entries_summaries, 1):
-            content += f"""## {i}. {entry['title']}
-
-**URL:** [{entry['url']}]({entry['url']})
-
-### AI要約
-
-{summary}
-
----
-
-"""
-        
-        # フッター
-        content += """*この記事は、はてなブックマークのRSSフィードから自動生成されました。*  
-*要約はAI（Gemini）によって生成されており、元記事の内容を正確に反映していない場合があります。*  
-*詳細な内容については、各URLから元記事をご確認ください。*
-"""
-        
         try:
-            os.makedirs('_posts', exist_ok=True)
-            with open(filename, 'w', encoding='utf-8') as f:
-                f.write(content)
-            
-            logger.info(f"Created daily blog post: {filename} with {article_count} articles")
-            return 1
-            
-        except Exception as e:
-            logger.error(f"Error creating daily post: {e}")
-            return 0
-    
-    def run(self):
-        """メイン処理を実行"""
-        logger.info("Starting Hatena Bookmark summarization process")
-        
-        # RSSフィードを取得
-        entries = self.fetch_rss()
-        if not entries:
-            logger.warning("No entries found in RSS feed")
-            return
+            response = self._model.generate_content(
+                prompt,
+                generation_config={"response_mime_type": "application/json", "temperature": 0.2},
+            )
+            return parse_digest(response.text)
+        except Exception as e:  # noqa: BLE001 - 1記事の失敗で全体を止めない
+            logger.error("Error generating summary for %s: %s", bookmark.url, e)
+            return Digest(summary=SUMMARY_FALLBACK)
 
-        # # 昨日の記事をフィルタリング
-        yesterday_entries = self.filter_yesterday_entries(entries)
-        if not yesterday_entries:
-            logger.info("No entries from yesterday found")
-            return
-        
-        # 各記事を処理
-        entries_summaries = []
-        for entry in yesterday_entries:
-            try:
-                title = entry.title
-                url = entry.link
-                
-                logger.info(f"Processing: {title}")
-                
-                # 記事内容を取得
-                content = self.extract_article_content(url)
-                
-                # コンテンツ取得に失敗した場合はスキップ
-                if content == "コンテンツの取得に失敗しました":
-                    logger.warning(f"Skipping entry due to content extraction failure: {title}")
-                    continue
-                
-                # 要約を生成
-                summary = self.summarize_with_gemini(title, url, content)
-                
-                
-                entries_summaries.append((
-                    {'title': title, 'url': url},
-                    summary
-                ))
-                
-                # API制限を考慮して少し待機
-                time.sleep(2)
-                
-            except Exception as e:
-                logger.error(f"Error processing entry {entry.get('title', 'Unknown')}: {e}")
-                continue
-        
-        # 一日分のMarkdownファイルを作成
-        yesterday_date = self.get_yesterday_date()
-        if entries_summaries:
-            created_count = self.create_daily_markdown_post(entries_summaries, yesterday_date)
-            if created_count > 0:
-                logger.info(f"Successfully created daily blog post with {len(entries_summaries)} articles")
-            else:
-                logger.info("No new blog post was created (may already exist)")
-        else:
-            logger.info("No valid entries to create blog posts")
+
+# --------------------------------------------------------------------------
+# 記事生成
+# --------------------------------------------------------------------------
+
+def build_front_matter(front_matter: dict) -> str:
+    """YAMLとして安全なフロントマターを生成する
+
+    タイトルや要約に含まれる " や \\ を手動で埋め込むとYAMLが壊れ、
+    Astroが記事を読み込めずRSSから記事が消えるため、必ずyaml.dumpを通す。
+    """
+    body = yaml.dump(
+        front_matter,
+        allow_unicode=True,
+        default_flow_style=False,
+        sort_keys=False,
+        width=10**6,
+    )
+    return f"---\n{body}---\n"
+
+
+def post_path(target_date: date, posts_dir: Path = POSTS_DIR) -> Path:
+    return Path(posts_dir) / f"{target_date:%Y-%m-%d}-hatena-bookmarks.md"
+
+
+def render_post(
+    digests: Sequence[tuple[Bookmark, Digest]],
+    target_date: date,
+    published_at: datetime | None = None,
+) -> str:
+    """まとめ記事のMarkdownを組み立てる"""
+    published_at = published_at or datetime.now(JST)
+    count = len(digests)
+    date_label = f"{target_date:%Y年%m月%d日}"
+
+    front_matter = build_front_matter(
+        {
+            # パーマリンクはブックマーク日から生成する。
+            # published_at は実行時刻（RSS通知のため翌朝）なので、ビルド環境のタイムゾーン次第で
+            # /:year/:month/:day/ が翌日にずれ、翌日分の記事とURLが衝突してしまう。
+            "title": f"はてなブックマーク {date_label} の記事まとめ ({count}件)",
+            "date": published_at.strftime("%Y-%m-%d %H:%M:%S %z"),
+            "permalink": f"/{target_date:%Y/%m/%d}/hatena-bookmarks/",
+            "excerpt": f"{date_label}にブックマークした{count}件を、1行ずつまとめました。",
+        }
+    )
+
+    # 本文の導入文は置かない。タイトルに日付と件数が入っており、
+    # 一覧やフィードには excerpt が出るので、記事側で繰り返すと読む量が増えるだけ。
+    sections: list[str] = []
+    for bookmark, digest in digests:
+        block = [f"## [{bookmark.title}]({bookmark.url})", "", digest.summary]
+        if digest.points:
+            block.append("")
+            block.extend(f"- {point}" for point in digest.points)
+        sections.append("\n".join(block))
+
+    sections.append(
+        "---\n\n"
+        "*はてなブックマークのRSSから自動生成しています。"
+        "要約はAI（Gemini）によるもので、正確さは元記事をご確認ください。*"
+    )
+
+    return front_matter + "\n" + "\n\n".join(sections) + "\n"
+
+
+def write_post(
+    digests: Sequence[tuple[Bookmark, Digest]],
+    target_date: date,
+    posts_dir: Path = POSTS_DIR,
+) -> bool:
+    """まとめ記事を書き出す。作成したら True、スキップ・失敗なら False"""
+    if not digests:
+        logger.info("No entries to summarize, skipping post creation")
+        return False
+
+    path = post_path(target_date, posts_dir)
+    if path.exists():
+        logger.info("Post already exists, skipping: %s", path)
+        return False
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(render_post(digests, target_date), encoding="utf-8")
+    except OSError as e:
+        logger.error("Error creating daily post: %s", e)
+        return False
+
+    logger.info("Created daily blog post: %s with %d articles", path, len(digests))
+    return True
+
+
+# --------------------------------------------------------------------------
+# エントリポイント
+# --------------------------------------------------------------------------
+
+def summarize_bookmarks(
+    bookmarks: Sequence[Bookmark],
+    summarizer: GeminiSummarizer,
+    interval_sec: float = API_INTERVAL_SEC,
+) -> list[tuple[Bookmark, Digest]]:
+    """各ブックマークの本文を取得して要約する（本文が取れないものはスキップ）"""
+    digests: list[tuple[Bookmark, Digest]] = []
+
+    for index, bookmark in enumerate(bookmarks):
+        logger.info("Processing: %s", bookmark.title)
+        article_text = fetch_article_text(bookmark.url)
+        if not article_text:
+            logger.warning("Skipping entry due to content extraction failure: %s", bookmark.title)
+            continue
+
+        digests.append((bookmark, summarizer.summarize(bookmark, article_text)))
+
+        if interval_sec and index < len(bookmarks) - 1:
+            time.sleep(interval_sec)
+
+    return digests
+
+
+def run(target_date: date | None = None, dry_run: bool = False) -> int:
+    """メイン処理。作成した記事数（0 or 1）を返す"""
+    logger.info("Starting Hatena Bookmark summarization process")
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        logger.error("GEMINI_API_KEY environment variable is not set")
+        sys.exit(1)
+
+    target_date = target_date or yesterday_in_jst()
+
+    entries = fetch_entries()
+    if not entries:
+        logger.warning("No entries found in RSS feed")
+        return 0
+
+    bookmarks = select_bookmarks(entries, target_date)
+    if not bookmarks:
+        logger.info("No entries from %s found", target_date)
+        return 0
+
+    digests = summarize_bookmarks(bookmarks, GeminiSummarizer(api_key))
+    if not digests:
+        logger.info("No valid entries to create blog posts")
+        return 0
+
+    if dry_run:
+        print(render_post(digests, target_date))
+        return 0
+
+    return 1 if write_post(digests, target_date) else 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="はてなブックマークの前日分を要約して記事にする")
+    parser.add_argument("--date", help="対象日 (YYYY-MM-DD)。既定は日本時間の昨日")
+    parser.add_argument("--dry-run", action="store_true", help="ファイルを書かずに標準出力へ表示する")
+    args = parser.parse_args(argv)
+
+    target_date = datetime.strptime(args.date, "%Y-%m-%d").date() if args.date else None
+    run(target_date=target_date, dry_run=args.dry_run)
+    return 0
+
 
 if __name__ == "__main__":
-    summarizer = HatenaBookmarkSummarizer()
-    summarizer.run()
+    sys.exit(main())

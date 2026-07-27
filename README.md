@@ -153,10 +153,19 @@ excerpt: "記事の要約"
 
 `scripts/fetch_and_summarize.py` スクリプトは以下の機能を提供します：
 
-1. **RSS処理**: はてなブックマークのRSSフィードを取得
+1. **RSS処理**: はてなブックマークのRSSフィードを取得し、前日分だけを抽出
 2. **コンテンツ抽出**: BeautifulSoupを使用した記事内容の抽出
-3. **AI要約**: Gemini APIを使用した3-5文の要約生成
-4. **Markdown生成**: `_posts/` に記事ファイルを生成
+3. **AI要約**: Gemini APIでJSON（`summary` / `points`）を生成
+4. **Markdown生成**: 1件あたり「1行サマリ + 箇条書き最大3点」で `_posts/` に記事を生成
+
+朝にパラッと読める分量にするため、要約の長さはスクリプト側で制限しています
+（`SUMMARY_MAX_CHARS` / `POINT_MAX_CHARS` / `MAX_POINTS`）。
+
+```bash
+# ファイルを書かずに出力を確認する（対象日の指定も可能）
+python scripts/fetch_and_summarize.py --dry-run
+python scripts/fetch_and_summarize.py --date 2026-07-26 --dry-run
+```
 
 ### 環境変数
 
