@@ -13,8 +13,9 @@ export default defineConfig({
   },
   markdown: {
     // Jekyll (Rouge) と同じくビルド時にシンタックスハイライトする
+    // （サイトはダークテーマ固定なので、配色もダーク側に合わせている）
     shikiConfig: {
-      theme: 'github-light',
+      theme: 'github-dark-default',
       wrap: true,
     },
   },

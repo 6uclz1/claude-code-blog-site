@@ -9,50 +9,31 @@ interface Props {
 const { posts } = Astro.props;
 ---
 
-<div class="post-list">
-  {
-    posts.map((post) => (
-      <div
-        class="post-item"
-        data-url={postUrl(post)}
-        tabindex="0"
-        role="article"
-        aria-label={`${post.data.title} - 記事を開く`}
-      >
-        <h2 class="post-title">{post.data.title}</h2>
-        <div class="post-meta">
-          <time datetime={post.data.date.toISOString()}>
-            {formatDateJa(post.data.date)}
-          </time>
-        </div>
-        {post.data.excerpt && (
-          <div class="post-excerpt" set:html={renderExcerpt(post.data.excerpt)} />
-        )}
-      </div>
-    ))
-  }
-</div>
-
-<script>
-  // カード全体をクリック/Enterで記事に遷移できるようにする
-  document.querySelectorAll<HTMLElement>('.post-item').forEach((item) => {
-    const go = () => {
-      const url = item.dataset.url;
-      if (url) window.location.href = url;
-    };
-
-    item.addEventListener('click', (e) => {
-      // excerpt 内のリンクは本来のリンク先を優先する
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'A' && target.closest('.post-excerpt')) return;
-      go();
-    });
-
-    item.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        go();
-      }
-    });
-  });
-</script>
+{
+  posts.length === 0 ? (
+    <p class="empty-state">記事はまだありません。</p>
+  ) : (
+    <div class="post-index">
+      {posts.map((post) => (
+        <article class="post-row">
+          <span class="post-row__date">
+            <time datetime={post.data.date.toISOString()}>
+              {formatDateJa(post.data.date)}
+            </time>
+          </span>
+          <div class="post-row__body">
+            <a class="post-row__link" href={postUrl(post)}>
+              <span class="post-row__title">{post.data.title}</span>
+            </a>
+            {post.data.excerpt && (
+              <div
+                class="post-row__excerpt"
+                set:html={renderExcerpt(post.data.excerpt)}
+              />
+            )}
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}

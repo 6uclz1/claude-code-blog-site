@@ -125,7 +125,7 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
   `/`, later pages are `/page2/`, `/page3/`, … (the Jekyll `paginate_path` is preserved)
 - **Atom feed**: `src/pages/feed.xml.ts` emits `/feed.xml` in the same Atom format
   jekyll-feed produced, so existing subscribers and the publishing gate keep working
-- **Responsive Design**: Mobile-first CSS with breakpoints at 768px
+- **Responsive Design**: Mobile-first CSS with a breakpoint at 720px
 - **Japanese Localization**: Date formatting and UI text in Japanese
 - **Syntax Highlighting**: Shiki, at build time
 - **Automated Content**: Daily Hatena bookmark summarization using Gemini AI
@@ -139,13 +139,23 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
 - Japanese content with proper typography and line-height optimization
 
 ### Styling System
-- **Typography**: Uses Japanese-friendly font stack with Helvetica Neue and Hiragino Sans
-- **Color Palette**:
-  - Background: #0f172a (dark navy)
-  - Card: #1e293b
-  - Accent: #60a5fa (blue)
-- **Components**: Card-based post layout with hover effects and shadows
-- **Responsive**: Mobile-optimized with adjusted padding and font sizes
+The design follows [6uclz1/minimal-blog](https://github.com/6uclz1/minimal-blog), fixed to
+its dark theme. Everything lives in `src/styles/global.css` and is driven by CSS variables
+on `:root` (`--bg` / `--fg` / `--muted` / `--line` / `--panel`, plus the `--content-inline`,
+`--content-max`, `--copy-max` layout widths).
+
+- **Typography**: Japanese-friendly system font stack, light weight (`--text-weight: 300`)
+  with wide letter-spacing on titles
+- **Color Palette**: background #09090b, foreground #f4f4f1, and translucent
+  muted/line/panel tones derived from it — no accent hue
+- **Texture**: a fixed, masked dot pattern (`body::before`) over a subtle radial gradient
+- **Components**: no cards or shadows. The index is a date + title row list
+  (`.post-index` / `.post-row`), the article page is `.post-page` / `.post-body`, and the
+  header is a fixed brand at top-left with the footer at bottom-right
+- **Hover**: links share one effect — a gradient sweeping in from the left that inverts
+  the text color (`--hover-shape` / `--hover-surface`); disabled under
+  `prefers-reduced-motion`
+- **Responsive**: single breakpoint at 720px; the post rows collapse to one column
 
 ## Automation Architecture
 
