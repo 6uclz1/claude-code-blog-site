@@ -18,16 +18,18 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from datetime import time as clock_time  # time モジュール(sleep)と衝突しないよう別名にする
 from pathlib import Path
 from typing import Iterable, Sequence
 from urllib.parse import urlparse
 
 import feedparser
-import google.generativeai as genai
 import pytz
 import requests
 import yaml
 from bs4 import BeautifulSoup
+from google import genai
+from google.genai import types as genai_types
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -39,6 +41,9 @@ JST = pytz.timezone("Asia/Tokyo")
 
 # 記事本文の取得まわり
 HTTP_TIMEOUT_SEC = 15
+# RSS取得のリトライ（はてな側が不調でもその日の記事を落とさないため）
+RSS_RETRY_COUNT = 3
+RSS_RETRY_WAIT_SEC = 2
 ARTICLE_TEXT_LIMIT = 3000
 # 本文として採用する最低文字数。これを下回るときは取得失敗とみなして
 # r.jina.ai 側の結果を使う（ログイン誘導やCookie同意だけのページ対策）
@@ -80,6 +85,14 @@ MAX_POINTS = 3
 API_INTERVAL_SEC = 2
 
 SUMMARY_FALLBACK = "要約を生成できませんでした。詳しくは元記事をご覧ください。"
+
+# 記事の date に使う時刻（JST）。実行時刻ではなくブックマーク日から決めることで、
+# 手動実行した場合でも表示日付（UTC基準）とパーマリンクの日付がずれない。
+POST_TIME_JST = clock_time(9, 0)
+
+
+class AbortRun(RuntimeError):
+    """記事を作らずに異常終了すべき状況（設定不備・要約の全滅など）"""
 
 
 @dataclass(frozen=True)
@@ -153,16 +166,29 @@ def _entry_title(entry) -> str:
 # --------------------------------------------------------------------------
 
 def fetch_entries(rss_url: str = RSS_URL) -> list:
-    """RSSフィードのエントリを取得する（失敗時は空リスト）"""
-    try:
-        logger.info("Fetching RSS from %s", rss_url)
-        feed = feedparser.parse(rss_url)
-        if getattr(feed, "bozo", False):
-            logger.warning("Feed parsing had issues, but continuing...")
-        return list(feed.entries)
-    except Exception as e:  # noqa: BLE001 - RSS取得の失敗で全体を止めない
-        logger.error("Error fetching RSS: %s", e)
-        return []
+    """RSSフィードのエントリを取得する（失敗時は空リスト）
+
+    feedparser.parse(url) はURLを渡すと内部で取得するがタイムアウトを指定できず、
+    はてな側が応答しないとジョブがそのままハングする。取得は requests に任せて
+    タイムアウトとリトライを効かせ、feedparser にはバイト列だけを渡す。
+    """
+    for attempt in range(1, RSS_RETRY_COUNT + 1):
+        try:
+            logger.info("Fetching RSS from %s (attempt %d/%d)", rss_url, attempt, RSS_RETRY_COUNT)
+            response = requests.get(
+                rss_url, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT_SEC
+            )
+            response.raise_for_status()
+            feed = feedparser.parse(response.content)
+            if getattr(feed, "bozo", False):
+                logger.warning("Feed parsing had issues, but continuing...")
+            return list(feed.entries)
+        except Exception as e:  # noqa: BLE001 - RSS取得の失敗で全体を止めない
+            logger.error("Error fetching RSS: %s", e)
+            if attempt < RSS_RETRY_COUNT:
+                time.sleep(RSS_RETRY_WAIT_SEC * attempt)
+
+    return []
 
 
 def select_bookmarks(entries: Iterable, target: date) -> list[Bookmark]:
@@ -216,8 +242,10 @@ def fetch_article_text_direct(url: str) -> str | None:
     try:
         response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT_SEC)
         response.raise_for_status()
-        response.encoding = response.apparent_encoding
 
+        # 文字コードの判定は BeautifulSoup に任せる（bytes をそのまま渡す）。
+        # response.encoding を触っても .content には効かないうえ、apparent_encoding は
+        # 本文全体を走査するので無駄が大きい。
         soup = BeautifulSoup(response.content, "html.parser")
         for element in soup(["script", "style", "nav", "header", "footer", "aside"]):
             element.decompose()
@@ -381,12 +409,24 @@ def parse_digest(raw: str) -> Digest:
     return Digest(summary=summary or SUMMARY_FALLBACK, points=tuple(points))
 
 
+def generation_config() -> genai_types.GenerateContentConfig:
+    """要約リクエストの生成設定
+
+    SDKの型を通して組み立てる。設定名がSDKのバージョンに存在しない場合はここで
+    例外になるため、テスト（SDKをモックしない）で互換性の崩れを検知できる。
+    """
+    return genai_types.GenerateContentConfig(
+        response_mime_type="application/json",
+        temperature=0.2,
+    )
+
+
 class GeminiSummarizer:
     """Gemini で1件分の短い要約を作る"""
 
     def __init__(self, api_key: str, model_name: str = GEMINI_MODEL):
-        genai.configure(api_key=api_key)
-        self._model = genai.GenerativeModel(model_name)
+        self._client = genai.Client(api_key=api_key)
+        self._model_name = model_name
 
     def summarize(self, bookmark: Bookmark, article_text: str) -> Digest:
         prompt = PROMPT_TEMPLATE.format(
@@ -398,11 +438,12 @@ class GeminiSummarizer:
             content=article_text,
         )
         try:
-            response = self._model.generate_content(
-                prompt,
-                generation_config={"response_mime_type": "application/json", "temperature": 0.2},
+            response = self._client.models.generate_content(
+                model=self._model_name,
+                contents=prompt,
+                config=generation_config(),
             )
-            return parse_digest(response.text)
+            return parse_digest(response.text or "")
         except Exception as e:  # noqa: BLE001 - 1記事の失敗で全体を止めない
             logger.error("Error generating summary for %s: %s", bookmark.url, e)
             return Digest(summary=SUMMARY_FALLBACK)
@@ -432,23 +473,29 @@ def post_path(target_date: date, posts_dir: Path = POSTS_DIR) -> Path:
     return Path(posts_dir) / f"{target_date:%Y-%m-%d}-hatena-bookmarks.md"
 
 
-def render_post(
-    digests: Sequence[tuple[Bookmark, Digest]],
-    target_date: date,
-    published_at: datetime | None = None,
-) -> str:
+def post_datetime(target_date: date) -> datetime:
+    """記事の date に入れる日時
+
+    実行時刻ではなくブックマーク日から決める。表示（src/lib/posts.ts）はUTC基準なので、
+    JSTの9時＝UTCの0時にしておけば、いつ実行しても表示日付がパーマリンクと一致する。
+    実行時刻を入れていた頃は、cronの時間帯（23:00 UTC）でたまたま一致していただけで、
+    workflow_dispatch で日中に手動実行すると表示日付が1日ずれていた。
+    """
+    return JST.localize(datetime.combine(target_date, POST_TIME_JST))
+
+
+def render_post(digests: Sequence[tuple[Bookmark, Digest]], target_date: date) -> str:
     """まとめ記事のMarkdownを組み立てる"""
-    published_at = published_at or datetime.now(JST)
     count = len(digests)
     date_label = f"{target_date:%Y年%m月%d日}"
 
     front_matter = build_front_matter(
         {
-            # パーマリンクはブックマーク日から生成する。
-            # published_at は実行時刻（RSS通知のため翌朝）なので、ビルド環境のタイムゾーン次第で
+            # タイトル・date・パーマリンクをすべてブックマーク日から生成する。
+            # 実行時刻を混ぜると、ビルド環境のタイムゾーンや実行時間帯によって
             # /:year/:month/:day/ が翌日にずれ、翌日分の記事とURLが衝突してしまう。
             "title": f"はてなブックマーク {date_label} の記事まとめ ({count}件)",
-            "date": published_at.strftime("%Y-%m-%d %H:%M:%S %z"),
+            "date": post_datetime(target_date).strftime("%Y-%m-%d %H:%M:%S %z"),
             "permalink": f"/{target_date:%Y/%m/%d}/hatena-bookmarks/",
             "excerpt": f"{date_label}にブックマークした{count}件を、1行ずつまとめました。",
         }
@@ -527,13 +574,15 @@ def summarize_bookmarks(
 
 
 def run(target_date: date | None = None, dry_run: bool = False) -> int:
-    """メイン処理。作成した記事数（0 or 1）を返す"""
+    """メイン処理。作成した記事数（0 or 1）を返す
+
+    記事を作れない異常（設定不備・要約の全滅）は AbortRun を送出する。
+    """
     logger.info("Starting Hatena Bookmark summarization process")
 
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        logger.error("GEMINI_API_KEY environment variable is not set")
-        sys.exit(1)
+        raise AbortRun("GEMINI_API_KEY environment variable is not set")
 
     target_date = target_date or yesterday_in_jst()
 
@@ -552,6 +601,15 @@ def run(target_date: date | None = None, dry_run: bool = False) -> int:
         logger.info("No valid entries to create blog posts")
         return 0
 
+    # 要約が1件も作れていない記事は中身が無いのと同じなので公開しない。
+    # フロントマターもURLも正常なため公開前ゲート(validate_build.py)では検知できず、
+    # ここで止めないと「要約を生成できませんでした」だけが並んだ記事が公開されてしまう。
+    if all(digest.summary == SUMMARY_FALLBACK for _, digest in digests):
+        raise AbortRun(
+            "すべての要約に失敗したため記事を作成しません "
+            "(APIキー・レート制限・SDKの互換性を確認してください)"
+        )
+
     if dry_run:
         print(render_post(digests, target_date))
         return 0
@@ -566,7 +624,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     target_date = datetime.strptime(args.date, "%Y-%m-%d").date() if args.date else None
-    run(target_date=target_date, dry_run=args.dry_run)
+    try:
+        run(target_date=target_date, dry_run=args.dry_run)
+    except AbortRun as e:
+        logger.error("%s", e)
+        return 1
     return 0
 
 

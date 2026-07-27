@@ -1,14 +1,6 @@
-feedparser==6.0.10
-requests==2.31.0
-beautifulsoup4==4.12.2
-python-dateutil==2.8.2
-google-generativeai==0.3.2
-lxml==4.9.3
-pytz==2023.3
-PyYAML==6.0.1
-
-# Test dependencies
-pytest==7.4.0
-pytest-mock==3.11.1
-pytest-cov==4.1.0
-coverage==7.2.7
+feedparser==6.0.12
+requests==2.34.2
+beautifulsoup4==4.15.0
+google-genai==2.14.0
+pytz==2026.3.post1
+PyYAML==6.0.3
