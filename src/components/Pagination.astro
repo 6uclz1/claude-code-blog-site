@@ -10,25 +10,44 @@ const { currentPage, totalPages } = Astro.props;
 
 // Jekyll の paginate_path: "/page:num/" と同じURLを維持する（1ページ目は "/"）
 const pagePath = (num: number) => withBase(num === 1 ? '/' : `/page${num}/`);
-const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+
+/**
+ * ミニマルに保つため、先頭・末尾と現在地の前後だけを並べ、
+ * 間は "…" で省略する。
+ */
+const WINDOW = 1;
+const shown = new Set<number>([1, totalPages]);
+for (let num = currentPage - WINDOW; num <= currentPage + WINDOW; num += 1) {
+  if (num >= 1 && num <= totalPages) shown.add(num);
+}
+const numbers = [...shown].sort((a, b) => a - b);
+const items = numbers.flatMap((num, i) =>
+  i > 0 && num - numbers[i - 1] > 1 ? [null, num] : [num]
+);
 ---
 
 {
   totalPages > 1 && (
-    <div class="pagination">
-      {currentPage > 1 && <a href={pagePath(currentPage - 1)}>&laquo; 前へ</a>}
+    <nav class="pagination" aria-label="ページ送り">
+      {currentPage > 1 && <a href={pagePath(currentPage - 1)}>← 前へ</a>}
 
-      {pages.map((num) =>
-        num === currentPage ? (
-          <span class="current">{num}</span>
+      {items.map((num) =>
+        num === null ? (
+          <span class="pagination__gap" aria-hidden="true">
+            …
+          </span>
+        ) : num === currentPage ? (
+          <span class="current" aria-current="page">
+            {num}
+          </span>
         ) : (
           <a href={pagePath(num)}>{num}</a>
         )
       )}
 
       {currentPage < totalPages && (
-        <a href={pagePath(currentPage + 1)}>次へ &raquo;</a>
+        <a href={pagePath(currentPage + 1)}>次へ →</a>
       )}
-    </div>
+    </nav>
   )
 }

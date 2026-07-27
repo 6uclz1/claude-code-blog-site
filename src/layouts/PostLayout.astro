@@ -1,6 +1,6 @@
 ---
 import BaseLayout from './BaseLayout.astro';
-import { formatDateJa, toDescription } from '../lib/posts';
+import { formatDateJa, toDescription, withBase } from '../lib/posts';
 import { SITE } from '../site';
 
 interface Props {
@@ -14,16 +14,20 @@ const description = excerpt ? toDescription(excerpt) : SITE.description;
 ---
 
 <BaseLayout title={title} description={description}>
-  <article class="post">
-    <header class="post-header">
-      <h1>{title}</h1>
-      <div class="post-meta">
+  <article class="post-page">
+    <header class="post-page__header">
+      <p class="post-page__meta">
         <time datetime={date.toISOString()}>{formatDateJa(date)}</time>
-      </div>
+      </p>
+      <h1>{title}</h1>
     </header>
 
-    <div class="post-content">
+    <div class="post-body">
       <slot />
     </div>
+
+    <nav class="post-nav" aria-label="記事ナビゲーション">
+      <a class="post-nav__back" href={withBase('/')}>← 記事一覧へ</a>
+    </nav>
   </article>
 </BaseLayout>

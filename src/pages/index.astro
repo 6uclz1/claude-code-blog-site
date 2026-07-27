@@ -3,14 +3,19 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import PostList from '../components/PostList.astro';
 import Pagination from '../components/Pagination.astro';
 import { getSortedPosts, PAGE_SIZE } from '../lib/posts';
+import { SITE } from '../site';
 
 const posts = await getSortedPosts();
 const totalPages = Math.max(1, Math.ceil(posts.length / PAGE_SIZE));
 ---
 
 <BaseLayout>
-  <div class="home">
+  <section class="page-section">
+    <div class="page-heading">
+      <h1>{SITE.title}</h1>
+      <p class="eyebrow">{SITE.description}</p>
+    </div>
     <PostList posts={posts.slice(0, PAGE_SIZE)} />
     <Pagination currentPage={1} totalPages={totalPages} />
-  </div>
+  </section>
 </BaseLayout>
