@@ -71,6 +71,8 @@ npm run dev
 
 # Install Python dependencies for automation scripts
 pip install -r requirements.txt
+# Test dependencies (includes requirements.txt)
+pip install -r requirements-dev.txt
 
 # Run Hatena bookmark summarization script manually
 python scripts/fetch_and_summarize.py
@@ -80,7 +82,7 @@ python scripts/fetch_and_summarize.py
 ```bash
 # Run all tests with coverage (Docker)
 docker compose run --rm python-scripts sh -c "
-  pip install -r requirements.txt &&
+  pip install -r requirements-dev.txt &&
   python test_runner.py --coverage
 "
 
@@ -109,7 +111,8 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
   - `src/lib/posts.ts`: sorting, permalink→URL, date formatting, excerpt rendering
   - `src/layouts/`: `BaseLayout.astro`, `PostLayout.astro`
   - `src/components/`: `Header`, `Footer`, `PostList`, `Pagination`
-  - `src/pages/`: `index.astro`, `page[num].astro`, `[...slug].astro`, `feed.xml.ts`
+  - `src/pages/`: `index.astro`, `page[num].astro`, `[...slug].astro`, `404.astro`,
+    `feed.xml.ts`, `sitemap.xml.ts`
   - `src/styles/global.css`: custom CSS (imported by `BaseLayout`)
   - `_posts/`: blog posts in Markdown with YAML front matter
 - **Automation Pipeline**:
@@ -117,7 +120,8 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
   - `scripts/validate_build.py`: pre-publish gate over the build log and feed.xml
   - `tests/`: Unit tests with pytest and mocking for Gemini API
   - `test_runner.py`: Test execution script with coverage support
-  - `requirements.txt`: Python dependencies (production + testing)
+  - `requirements.txt`: Python dependencies (production)
+  - `requirements-dev.txt`: test dependencies (includes `requirements.txt`)
 - **CI/CD**: `.github/workflows/` for automated deployment and content updates
 
 ### Key Features
@@ -131,7 +135,10 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
   is capped by `FEED_SUMMARY_MAX_CHARS` / `FEED_SUMMARY_TITLE_MAX_CHARS` and the overflow
   collapses into `ほかN件`. Lines are separated by both `<br />` and a real newline so
   HTML readers and tag-stripping clients (Slack) both break lines. Posts without bookmark
-  headings fall back to `excerpt`
+  headings fall back to `excerpt`. Everything inside a `type="html"` element (titles and
+  summaries alike) is escaped twice, so a title like `<Suspense>` is not swallowed as a tag
+- **SEO**: OGP / Twitter Card meta in `BaseLayout`, `sitemap.xml`, a `404.astro` page, and
+  `noindex, follow` + `rel=prev/next` on the paginated pages (`/page2/` and later)
 - **Responsive Design**: Mobile-first CSS with a breakpoint at 720px
 - **Japanese Localization**: Date formatting and UI text in Japanese
 - **Syntax Highlighting**: Shiki, at build time
@@ -183,13 +190,22 @@ between stages:
    scraping returns nothing usable — those hosts go through r.jina.ai first and fall back to
    direct. Every other host is scraped directly first and falls back to r.jina.ai when the
    result is missing or shorter than `MIN_ARTICLE_TEXT_CHARS` (cookie banners, login prompts).
-3. **AI Summarization**: `GeminiSummarizer.summarize()` asks Gemini for JSON
-   (`{"summary": ..., "points": [...]}`) via `response_mime_type: application/json`, and
-   `parse_digest()` normalizes/truncates it — prompt wording alone doesn't keep the length stable
+3. **AI Summarization**: `GeminiSummarizer.summarize()` asks Gemini (via the `google-genai`
+   SDK) for JSON (`{"summary": ..., "points": [...]}`) using `response_mime_type:
+   application/json`, and `parse_digest()` normalizes/truncates it — prompt wording alone
+   doesn't keep the length stable. A per-article failure falls back to `SUMMARY_FALLBACK`,
+   but if *every* article ends up on the fallback, `run()` raises `AbortRun` and no post is
+   written: the front matter of such a post is valid, so the publishing gate cannot catch it
 4. **Markdown Generation**: `render_post()` builds the post — one `## [title](url)` heading, a
    one-line summary, and up to 3 short bullets per bookmark — and `write_post()` saves it to
-   `_posts/` (front matter always via `yaml.dump`)
-5. **Deployment**: GitHub Actions builds with Astro, runs the publishing gate, then deploys to GitHub Pages
+   `_posts/` (front matter always via `yaml.dump`). `title` / `date` / `permalink` are all
+   derived from the bookmark date (`post_datetime()` pins the time to 09:00 JST = 00:00 UTC),
+   never from the run time — otherwise a manual run outside the cron window shifts the
+   displayed date, which is rendered in UTC, one day away from the permalink
+5. **Deployment**: `update-blog.yml` commits and pushes the post; the push triggers
+   `deploy.yml`, which builds with Astro, runs the publishing gate, and deploys to GitHub
+   Pages. Only `deploy.yml` deploys — deploying from both races on the `github-pages`
+   environment
 
 **Post length is a product decision**: the daily digest is meant to be skimmed in the morning, so
 the summary length limits live in the script (`SUMMARY_MAX_CHARS`, `POINT_MAX_CHARS`, `MAX_POINTS`)
@@ -205,8 +221,11 @@ writing it — useful for checking the output length after a prompt change.
 - **Testing Isolation**: Tests run in containerized environment with mocked external dependencies
 
 ### Testing Strategy
-- **Unit Tests**: Comprehensive pytest suite with 85% code coverage
-- **Gemini API Mocking**: All external API calls are mocked to avoid API key dependencies
+- **Unit Tests**: Comprehensive pytest suite with 92% code coverage
+- **Gemini API Mocking**: All external API calls are mocked to avoid API key dependencies.
+  The one exception is `generation_config()`, which is built through the real SDK types so a
+  setting the installed SDK no longer accepts fails the test instead of silently turning every
+  summary into the fallback string at runtime
 - **Error Scenarios**: Tests cover RSS failures, content extraction errors, and API timeout scenarios
 - **File Operations**: Tests verify Markdown file creation and content formatting
 

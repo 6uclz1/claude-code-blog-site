@@ -16,7 +16,7 @@ Astro で構築された日本語のブログサイトです。モダンなデ�
 
 - Node.js 22以上
 - Docker & Docker Compose（推奨）
-- Python 3.8以上（自動化スクリプト用）
+- Python 3.11（自動化スクリプト用。CI もこのバージョンで動かしています）
 
 ## 🛠️ 環境構築
 
@@ -48,6 +48,9 @@ npm run dev
 
 # Python依存関係をインストール（自動化スクリプト用）
 pip install -r requirements.txt
+
+# テストも動かす場合
+pip install -r requirements-dev.txt
 ```
 
 ## 🖥️ 開発コマンド
@@ -93,7 +96,7 @@ docker compose run --rm python-scripts sh -c "
 ```bash
 # 全テストをカバレッジ付きで実行（Docker）
 docker compose run --rm python-scripts sh -c "
-  pip install -r requirements.txt &&
+  pip install -r requirements-dev.txt &&
   python test_runner.py --coverage
 "
 
@@ -120,13 +123,14 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
 │   ├── lib/posts.ts         # 記事の取得・整形ユーティリティ
 │   ├── layouts/             # レイアウト
 │   ├── components/          # 再利用可能コンポーネント
-│   ├── pages/               # ルーティング（一覧・記事・feed.xml）
+│   ├── pages/               # ルーティング（一覧・記事・feed.xml・sitemap.xml・404）
 │   └── styles/global.css    # カスタムCSS
 ├── scripts/                 # 自動化スクリプト
 │   ├── fetch_and_summarize.py
 │   └── validate_build.py
 ├── tests/                   # ユニットテスト
-├── requirements.txt         # Python依存関係
+├── requirements.txt         # Python依存関係（本番）
+├── requirements-dev.txt     # Python依存関係（テスト）
 └── .github/workflows/       # CI/CD設定
 ```
 
@@ -155,7 +159,8 @@ excerpt: "記事の要約"
 
 1. **RSS処理**: はてなブックマークのRSSフィードを取得し、前日分だけを抽出
 2. **コンテンツ抽出**: BeautifulSoupを使用した記事内容の抽出
-3. **AI要約**: Gemini APIでJSON（`summary` / `points`）を生成
+3. **AI要約**: Gemini API（google-genai）でJSON（`summary` / `points`）を生成。
+   全件の要約に失敗した場合は記事を作らずに終了コード1で終わります
 4. **Markdown生成**: 1件あたり「1行サマリ + 箇条書き最大3点」で `_posts/` に記事を生成
 
 朝にパラッと読める分量にするため、要約の長さはスクリプト側で制限しています
@@ -190,22 +195,25 @@ GitHub Pagesを使用した自動デプロイが設定されています：
 3. `scripts/validate_build.py` による公開前検証
 4. GitHub Pagesへの自動デプロイ
 
+自動更新ワークフロー（`update-blog.yml`）は記事をコミットして push するところまでを担当し、
+公開はその push を受けた `deploy.yml` が行います（Pages への同時デプロイを避けるため）。
+
 ## 🎨 カスタマイズ
+
+配色・余白・タイポグラフィはすべて `src/styles/global.css` の `:root` にある
+CSS変数で管理しています。
 
 ### カラーパレット
 
-- **背景**: #0f172a（ダークネイビー）
-- **カード**: #1e293b
-- **アクセント**: #60a5fa（ブルー）
+ダークテーマ固定で、アクセント色は使いません。
+
+- **背景**: `--bg` #09090b
+- **文字**: `--fg` #f4f4f1
+- **補助・罫線・パネル**: `--muted` / `--line` / `--panel`（前景色の半透明）
 
 ### フォント
 
-日本語対応フォントスタックを使用：
-- Helvetica Neue
-- Hiragino Sans
-- Yu Gothic
+日本語対応のシステムフォントスタック（`--font-sans`）を使用：
+- -apple-system / BlinkMacSystemFont / Segoe UI / Helvetica Neue
+- Hiragino Sans / Hiragino Kaku Gothic ProN / Yu Gothic / Meiryo
 - sans-serif
-
-## 📄 ライセンス
-
-このプロジェクトは [MIT License](LICENSE) の下で公開されています。
