@@ -124,14 +124,23 @@ class TestCheckFeed(unittest.TestCase):
         errors = self._errors(content)
         self.assertTrue(any('未来' in e for e in errors), errors)
 
-    def test_same_second_entries_are_detected(self):
+    def test_same_second_entries_at_build_time_are_detected(self):
         """ビルド時刻を持つ壊れた記事は同一秒で束になって現れる"""
-        stamp = '2026-07-26T13:35:59+00:00'
+        stamp = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
         content = feed(
             entry(href='https://example.com/blog/2026/07/26/a-post/', published=stamp),
             entry(href='https://example.com/blog/2026/07/26/b-post/', published=stamp))
         errors = self._errors(content)
         self.assertTrue(any('同一時刻' in e for e in errors), errors)
+
+    def test_same_second_entries_in_the_past_are_allowed(self):
+        """過去の記事がたまたま同時刻でも、ビルド時刻の混入ではないので通す"""
+        stamp = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        content = feed(
+            entry(href='https://example.com/blog/2026/07/26/a-post/', published=stamp),
+            entry(href='https://example.com/blog/2026/07/26/b-post/', published=stamp))
+        errors = self._errors(content)
+        self.assertFalse(any('同一時刻' in e for e in errors), errors)
 
     def test_unexpected_url_shape_is_detected(self):
         content = feed(entry(href='https://example.com/blog/2026/07/26/2025-12-18-hatena-bookmarks'))
