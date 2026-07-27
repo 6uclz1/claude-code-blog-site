@@ -19,8 +19,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from scripts.fetch_and_summarize import (  # noqa: E402
     MAX_POINTS,
     POINT_MAX_CHARS,
+    RSS_RETRY_COUNT,
     SUMMARY_FALLBACK,
     SUMMARY_MAX_CHARS,
+    AbortRun,
     Bookmark,
     Digest,
     GeminiSummarizer,
@@ -28,7 +30,9 @@ from scripts.fetch_and_summarize import (  # noqa: E402
     fetch_article_text_direct,
     fetch_article_text_via_jina,
     fetch_entries,
+    generation_config,
     parse_digest,
+    post_datetime,
     post_path,
     prefers_jina,
     render_post,
@@ -66,21 +70,38 @@ class TestDates(unittest.TestCase):
 
 class TestFetchEntries(unittest.TestCase):
 
+    @patch('scripts.fetch_and_summarize.requests')
     @patch('scripts.fetch_and_summarize.feedparser')
-    def test_success(self, mock_feedparser):
-        feed = Mock(bozo=False, entries=[{'title': 'A'}, {'title': 'B'}])
-        mock_feedparser.parse.return_value = feed
+    def test_success(self, mock_feedparser, mock_requests):
+        mock_requests.get.return_value = Mock(content=b'<rss/>')
+        mock_feedparser.parse.return_value = Mock(bozo=False,
+                                                  entries=[{'title': 'A'}, {'title': 'B'}])
 
         result = fetch_entries('https://example.com/rss')
 
         self.assertEqual(len(result), 2)
-        mock_feedparser.parse.assert_called_once_with('https://example.com/rss')
+        # feedparser にURLを渡すとタイムアウトを指定できないため、取得は requests 側で行う
+        mock_feedparser.parse.assert_called_once_with(b'<rss/>')
+        self.assertEqual(mock_requests.get.call_args[0][0], 'https://example.com/rss')
+        self.assertIn('timeout', mock_requests.get.call_args[1])
 
-    @patch('scripts.fetch_and_summarize.feedparser')
-    def test_error_returns_empty(self, mock_feedparser):
-        mock_feedparser.parse.side_effect = Exception("Network error")
+    @patch('scripts.fetch_and_summarize.time.sleep')
+    @patch('scripts.fetch_and_summarize.requests')
+    def test_error_returns_empty_after_retries(self, mock_requests, mock_sleep):
+        mock_requests.get.side_effect = Exception("Network error")
 
         self.assertEqual(fetch_entries('https://example.com/rss'), [])
+        self.assertEqual(mock_requests.get.call_count, RSS_RETRY_COUNT)
+
+    @patch('scripts.fetch_and_summarize.time.sleep')
+    @patch('scripts.fetch_and_summarize.requests')
+    @patch('scripts.fetch_and_summarize.feedparser')
+    def test_retries_until_success(self, mock_feedparser, mock_requests, mock_sleep):
+        mock_requests.get.side_effect = [Exception("Network error"), Mock(content=b'<rss/>')]
+        mock_feedparser.parse.return_value = Mock(bozo=False, entries=[{'title': 'A'}])
+
+        self.assertEqual(len(fetch_entries('https://example.com/rss')), 1)
+        self.assertEqual(mock_requests.get.call_count, 2)
 
 
 class TestSelectBookmarks(unittest.TestCase):
@@ -330,43 +351,79 @@ class TestParseDigest(unittest.TestCase):
         self.assertEqual(parse_digest('').summary, SUMMARY_FALLBACK)
 
 
+class TestGenerationConfig(unittest.TestCase):
+    """生成設定はSDKをモックせずに組み立て、SDKとの互換性が崩れたら落ちるようにする
+
+    以前は generation_config に dict をそのまま渡していたため、SDKが対応していない
+    キー(response_mime_type)を指定してもテストでは気づけず、本番で全要約が
+    フォールバック文言に置き換わる状態になっていた。
+    """
+
+    def test_config_is_accepted_by_installed_sdk(self):
+        config = generation_config()
+
+        self.assertEqual(config.response_mime_type, 'application/json')
+        self.assertEqual(config.temperature, 0.2)
+
+
 class TestGeminiSummarizer(unittest.TestCase):
 
     def setUp(self):
         patcher = patch('scripts.fetch_and_summarize.genai')
         self.mock_genai = patcher.start()
         self.addCleanup(patcher.stop)
-        self.mock_model = Mock()
-        self.mock_genai.GenerativeModel.return_value = self.mock_model
+        self.mock_client = Mock()
+        self.mock_genai.Client.return_value = self.mock_client
         self.summarizer = GeminiSummarizer('test_api_key')
         self.bookmark = Bookmark(title='Test Title', url='https://example.com/test')
 
+    @property
+    def _generate(self):
+        return self.mock_client.models.generate_content
+
+    def test_client_is_created_with_api_key(self):
+        self.mock_genai.Client.assert_called_once_with(api_key='test_api_key')
+
     def test_summarize_success(self):
-        self.mock_model.generate_content.return_value = Mock(
-            text='{"summary": "短い要約。", "points": ["点1"]}')
+        self._generate.return_value = Mock(text='{"summary": "短い要約。", "points": ["点1"]}')
 
         digest = self.summarizer.summarize(self.bookmark, '記事本文')
 
         self.assertEqual(digest, Digest(summary='短い要約。', points=('点1',)))
-        prompt = self.mock_model.generate_content.call_args[0][0]
+        prompt = self._generate.call_args.kwargs['contents']
         self.assertIn('Test Title', prompt)
         self.assertIn('記事本文', prompt)
 
     def test_summarize_requests_json_output(self):
-        self.mock_model.generate_content.return_value = Mock(text='{"summary": "x", "points": []}')
+        self._generate.return_value = Mock(text='{"summary": "x", "points": []}')
 
         self.summarizer.summarize(self.bookmark, '記事本文')
 
-        config = self.mock_model.generate_content.call_args.kwargs['generation_config']
-        self.assertEqual(config['response_mime_type'], 'application/json')
+        config = self._generate.call_args.kwargs['config']
+        self.assertEqual(config.response_mime_type, 'application/json')
 
     def test_summarize_error_uses_fallback(self):
-        self.mock_model.generate_content.side_effect = Exception("API Error")
+        self._generate.side_effect = Exception("API Error")
 
         digest = self.summarizer.summarize(self.bookmark, '記事本文')
 
         self.assertEqual(digest.summary, SUMMARY_FALLBACK)
         self.assertEqual(digest.points, ())
+
+    def test_summarize_handles_empty_response_text(self):
+        self._generate.return_value = Mock(text=None)
+
+        self.assertEqual(self.summarizer.summarize(self.bookmark, '記事本文').summary,
+                         SUMMARY_FALLBACK)
+
+
+class TestPostDatetime(unittest.TestCase):
+
+    def test_utc_date_matches_permalink_date(self):
+        """表示（UTC基準）とパーマリンクの日付が一致すること"""
+        for target in (date(2025, 6, 21), date(2026, 1, 1), date(2026, 12, 31)):
+            with self.subTest(target=target):
+                self.assertEqual(post_datetime(target).astimezone(pytz.UTC).date(), target)
 
 
 class TestRenderPost(unittest.TestCase):
@@ -378,25 +435,31 @@ class TestRenderPost(unittest.TestCase):
             (Bookmark('Test Article 2', 'https://example.com/2'), Digest('2本目の要約。')),
         ]
         self.target = date(2025, 6, 21)
-        self.published = JST.localize(datetime(2025, 6, 22, 8, 30, 0))
 
     def test_front_matter(self):
-        fm = front_matter_of(render_post(self.digests, self.target, self.published))
+        fm = front_matter_of(render_post(self.digests, self.target))
 
         self.assertEqual(fm['title'], 'はてなブックマーク 2025年06月21日 の記事まとめ (2件)')
-        self.assertEqual(fm['date'], '2025-06-22 08:30:00 +0900')
-        # パーマリンクはブックマーク日から生成する。
-        # date は実行時刻（翌朝）なので、date 任せだとURLが翌日にずれて衝突する。
+        # title / date / permalink はすべてブックマーク日から決める。
+        # 実行時刻を使うと、実行した時間帯によってURLや表示日付が1日ずれる。
+        self.assertEqual(fm['date'], '2025-06-21 09:00:00 +0900')
         self.assertEqual(fm['permalink'], '/2025/06/21/hatena-bookmarks/')
 
+    def test_front_matter_date_does_not_depend_on_run_time(self):
+        """いつ実行しても同じ内容になる（workflow_dispatch での手動実行も含む）"""
+        first = front_matter_of(render_post(self.digests, self.target))
+        second = front_matter_of(render_post(self.digests, self.target))
+
+        self.assertEqual(first['date'], second['date'])
+
     def test_excerpt_is_one_line(self):
-        fm = front_matter_of(render_post(self.digests, self.target, self.published))
+        fm = front_matter_of(render_post(self.digests, self.target))
 
         self.assertNotIn('\n', fm['excerpt'].strip())
         self.assertIn('2件', fm['excerpt'])
 
     def test_body_links_title_and_lists_points(self):
-        body = body_of(render_post(self.digests, self.target, self.published))
+        body = body_of(render_post(self.digests, self.target))
 
         self.assertIn('## [Test Article 1](https://example.com/1)', body)
         self.assertIn('## [Test Article 2](https://example.com/2)', body)
@@ -406,7 +469,7 @@ class TestRenderPost(unittest.TestCase):
 
     def test_body_stays_short(self):
         """朝にパラッと読める分量（1件あたり数行）に収まっていること"""
-        body = body_of(render_post(self.digests, self.target, self.published))
+        body = body_of(render_post(self.digests, self.target))
 
         self.assertLess(len(body), 600)
         self.assertNotIn('### AI要約', body)
@@ -425,7 +488,7 @@ class TestRenderPost(unittest.TestCase):
              Digest('バックスラッシュ \\ を含む要約。')),
         ]
 
-        markdown = render_post(digests, self.target, self.published)
+        markdown = render_post(digests, self.target)
         fm = front_matter_of(markdown)
 
         self.assertIsInstance(fm, dict)
@@ -443,7 +506,7 @@ class TestRenderPost(unittest.TestCase):
              Digest('`${{ secrets.TOKEN }}` を直接展開しない。', ('{% if %} も同様',)))
         ]
 
-        body = body_of(render_post(digests, self.target, self.published))
+        body = body_of(render_post(digests, self.target))
 
         self.assertIn('${{ secrets.TOKEN }}', body)
         self.assertIn('{% if %}', body)
@@ -502,11 +565,44 @@ class TestRun(unittest.TestCase):
         self.mock_summarizer_cls = patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_missing_api_key_exits(self):
+    def test_missing_api_key_aborts(self):
         del os.environ['GEMINI_API_KEY']
 
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(AbortRun):
             run()
+
+    @patch('scripts.fetch_and_summarize.write_post')
+    @patch('scripts.fetch_and_summarize.summarize_bookmarks')
+    @patch('scripts.fetch_and_summarize.select_bookmarks')
+    @patch('scripts.fetch_and_summarize.fetch_entries')
+    def test_all_summaries_failed_aborts_without_writing(
+            self, mock_fetch, mock_select, mock_summarize, mock_write):
+        """要約が全滅した記事は公開前ゲートを素通りするので、ここで止める"""
+        bookmark = Bookmark('A', 'https://example.com/1')
+        mock_fetch.return_value = [Mock()]
+        mock_select.return_value = [bookmark]
+        mock_summarize.return_value = [(bookmark, Digest(SUMMARY_FALLBACK))]
+
+        with self.assertRaises(AbortRun):
+            run(date(2025, 6, 21))
+        mock_write.assert_not_called()
+
+    @patch('scripts.fetch_and_summarize.write_post')
+    @patch('scripts.fetch_and_summarize.summarize_bookmarks')
+    @patch('scripts.fetch_and_summarize.select_bookmarks')
+    @patch('scripts.fetch_and_summarize.fetch_entries')
+    def test_partial_failure_still_writes(
+            self, mock_fetch, mock_select, mock_summarize, mock_write):
+        """1件でも要約できていれば記事は作る"""
+        ok = Bookmark('A', 'https://example.com/1')
+        ng = Bookmark('B', 'https://example.com/2')
+        mock_fetch.return_value = [Mock()]
+        mock_select.return_value = [ok, ng]
+        mock_summarize.return_value = [(ok, Digest('要約。')), (ng, Digest(SUMMARY_FALLBACK))]
+        mock_write.return_value = True
+
+        self.assertEqual(run(date(2025, 6, 21)), 1)
+        mock_write.assert_called_once()
 
     @patch('scripts.fetch_and_summarize.write_post')
     @patch('scripts.fetch_and_summarize.summarize_bookmarks')

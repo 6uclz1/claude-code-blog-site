@@ -26,6 +26,11 @@ export function withBase(path: string): string {
   return `${base}/${path.replace(/^\/+/, '')}`;
 }
 
+/** ページ送りのURL。Jekyll の paginate_path: "/page:num/" と同じ（1ページ目は "/"） */
+export function pagePath(num: number): string {
+  return withBase(num === 1 ? '/' : `/page${num}/`);
+}
+
 /** 記事の公開URL（baseurl込み・末尾スラッシュ付き） */
 export function postUrl(post: Post): string {
   return withBase(`${permalinkToParam(post.data.permalink)}/`);

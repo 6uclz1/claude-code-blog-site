@@ -36,6 +36,11 @@ LOG_PATTERNS = [
 # 記事のURLは /YYYY/MM/DD/slug/ 形式
 POST_URL_RE = re.compile(r'/\d{4}/\d{2}/\d{2}/[^/]+/$')
 
+# フロントマターが壊れた記事はビルド時刻を持つため、同一秒のentryが束になって現れる。
+# 過去の記事が偶然同じ時刻を持っていても異常ではないので、
+# 「ビルド時刻に近い」ものだけを異常として扱う。
+BUILD_TIME_WINDOW = timedelta(hours=6)
+
 
 def check_log(path, errors):
     """Astroのビルドログを検査する"""
@@ -122,7 +127,7 @@ def check_feed(path, errors, min_entries=1):
     if len(published_at) >= 2:
         newest = max(published_at)
         same_second = [dt for dt in published_at if dt == newest]
-        if len(same_second) > 1:
+        if len(same_second) > 1 and abs(now - newest) <= BUILD_TIME_WINDOW:
             errors.append(
                 'feed.xml: publishedが同一時刻のentryが%d件ある(ビルド時刻が入り込んでいる可能性)'
                 % len(same_second))

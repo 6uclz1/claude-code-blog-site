@@ -17,12 +17,13 @@ import argparse
 
 def run_pytest(with_coverage=False):
     """pytestでテストを実行"""
-    cmd = ['python', '-m', 'pytest', '-v', 'tests/', '--ignore=dist', '--ignore=.astro']
-    
+    cmd = [sys.executable, '-m', 'pytest', '-v', 'tests/', '--ignore=dist', '--ignore=.astro']
+
     if with_coverage:
         try:
             # pytest-covが利用可能かチェック
-            subprocess.run(['python', '-c', 'import pytest_cov'], check=True, capture_output=True)
+            subprocess.run([sys.executable, '-c', 'import pytest_cov'],
+                           check=True, capture_output=True)
             cmd.extend(['--cov=scripts', '--cov-report=html', '--cov-report=term'])
         except subprocess.CalledProcessError:
             print("警告: pytest-covが見つかりません。カバレッジなしで実行します。")
@@ -38,7 +39,7 @@ def run_pytest(with_coverage=False):
 
 def run_unittest():
     """unittestでテストを実行"""
-    cmd = ['python', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py', '-v']
+    cmd = [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py', '-v']
     
     try:
         result = subprocess.run(cmd, check=True)

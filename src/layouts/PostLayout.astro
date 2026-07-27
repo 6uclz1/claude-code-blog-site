@@ -13,7 +13,12 @@ const { title, date, excerpt } = Astro.props;
 const description = excerpt ? toDescription(excerpt) : SITE.description;
 ---
 
-<BaseLayout title={title} description={description}>
+<BaseLayout
+  title={title}
+  description={description}
+  ogType="article"
+  publishedTime={date}
+>
   <article class="post-page">
     <header class="post-page__header">
       <p class="post-page__meta">

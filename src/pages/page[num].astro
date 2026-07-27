@@ -4,7 +4,7 @@ import type { GetStaticPaths } from 'astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PostList from '../components/PostList.astro';
 import Pagination from '../components/Pagination.astro';
-import { getSortedPosts, PAGE_SIZE, type Post } from '../lib/posts';
+import { getSortedPosts, PAGE_SIZE, pagePath, type Post } from '../lib/posts';
 import { SITE } from '../site';
 
 export const getStaticPaths: GetStaticPaths = async () => {
@@ -33,7 +33,12 @@ interface Props {
 const { posts, currentPage, totalPages } = Astro.props;
 ---
 
-<BaseLayout title={`${currentPage}ページ目`}>
+<BaseLayout
+  title={`${currentPage}ページ目`}
+  prevUrl={pagePath(currentPage - 1)}
+  nextUrl={currentPage < totalPages ? pagePath(currentPage + 1) : undefined}
+  noindex
+>
   <section class="page-section">
     <div class="page-heading">
       <h1>{SITE.title}</h1>

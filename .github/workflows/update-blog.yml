@@ -8,24 +8,34 @@ on:
 permissions:
   contents: write
   issues: write
-  pages: write
-  id-token: write
+
+# 同時に走ると同じ日の記事を二重に作ろうとするため直列化する
+concurrency:
+  group: update-blog
+  cancel-in-progress: false
 
 jobs:
   update-blog:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      # python-scripts サービスは image 指定だけでビルド対象を持たないため、
+      # Docker を挟まずランナー上で直接実行する（依存のキャッシュも効く）
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements-dev.txt
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -36,37 +46,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Docker services
-        run: docker compose build python-scripts
-
-      - name: Run fetch and summarize script in Docker
+      - name: Run fetch and summarize script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # 任意。未設定でも r.jina.ai は匿名で利用できる
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
-        run: |
-          docker compose run --rm python-scripts sh -c "
-            pip install -r requirements.txt &&
-            python scripts/fetch_and_summarize.py
-          "
+        run: python scripts/fetch_and_summarize.py
 
       - name: Check for changes
         id: verify-changed-files
         run: |
-          if [ -n "$(git status --porcelain)" ]; then
+          if [ -n "$(git status --porcelain _posts/)" ]; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-      # ここから公開前ゲート: 検証を通らなかったものはコミットもデプロイもしない
+      # ここから公開前ゲート: 検証を通らなかったものはコミットしない
       - name: Run tests
         if: steps.verify-changed-files.outputs.changed == 'true'
-        run: |
-          docker compose run --rm python-scripts sh -c "
-            pip install -r requirements.txt &&
-            python test_runner.py
-          "
+        run: python test_runner.py
 
       - name: Build Astro site
         if: steps.verify-changed-files.outputs.changed == 'true'
@@ -78,7 +77,7 @@ jobs:
       # ビルドログと feed.xml を検査してから公開する
       - name: Validate build output
         if: steps.verify-changed-files.outputs.changed == 'true'
-        run: python3 scripts/validate_build.py --log build.log --feed dist/feed.xml --min-entries 1
+        run: python scripts/validate_build.py --log build.log --feed dist/feed.xml --min-entries 1
 
       - name: Upload build output on failure
         if: failure()
@@ -90,35 +89,29 @@ jobs:
             _posts/
           if-no-files-found: ignore
 
-      # 検証を通ったのでコミットして公開する
-      - name: Configure Git
+      # 検証を通ったのでコミットして push する。
+      # 公開は push を受けた deploy.yml に任せる。両方から Pages にデプロイすると
+      # 同じ environment に対する同時デプロイになり、片方が失敗する
+      - name: Commit and push changes
         if: steps.verify-changed-files.outputs.changed == 'true'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-
-      - name: Commit and push changes
-        if: steps.verify-changed-files.outputs.changed == 'true'
-        run: |
           git add _posts/
           git commit -m "自動更新: はてなブックマークから記事を要約して追加 $(date '+%Y-%m-%d %H:%M:%S')"
-          git push
 
-      - name: Setup Pages
-        if: steps.verify-changed-files.outputs.changed == 'true'
-        uses: actions/configure-pages@v5
-
-      # 検証したものと同じ成果物をそのまま公開する
-      - name: Upload artifact
-        if: steps.verify-changed-files.outputs.changed == 'true'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: './dist'
-
-      - name: Deploy to GitHub Pages
-        if: steps.verify-changed-files.outputs.changed == 'true'
-        id: deployment
-        uses: actions/deploy-pages@v4
+          # 実行中に main が進んでいると push が落ち、生成した記事が失われる。
+          # rebase しながら数回まで再試行する
+          for attempt in 1 2 3 4; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "push に失敗しました (試行 ${attempt}/4)。rebase して再試行します"
+            sleep $((attempt * 5))
+            git pull --rebase origin main
+          done
+          echo "push に繰り返し失敗しました" >&2
+          exit 1
 
       # 無人運用なので、失敗したら気づけるように自動でissueを立てる
       - name: Report failure as issue

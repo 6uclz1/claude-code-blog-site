@@ -10,6 +10,8 @@ services:
       - NODE_ENV=development
     command: npm run dev
 
+  # ローカルで自動化スクリプトを動かすための使い捨てコンテナ。
+  # CI ではランナー上で直接実行している（image 指定だけなのでビルド対象を持たない）
   python-scripts:
     image: python:3.11-alpine
     working_dir: /app

@@ -2,14 +2,14 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PostList from '../components/PostList.astro';
 import Pagination from '../components/Pagination.astro';
-import { getSortedPosts, PAGE_SIZE } from '../lib/posts';
+import { getSortedPosts, PAGE_SIZE, pagePath } from '../lib/posts';
 import { SITE } from '../site';
 
 const posts = await getSortedPosts();
 const totalPages = Math.max(1, Math.ceil(posts.length / PAGE_SIZE));
 ---
 
-<BaseLayout>
+<BaseLayout nextUrl={totalPages > 1 ? pagePath(2) : undefined}>
   <section class="page-section">
     <div class="page-heading">
       <h1>{SITE.title}</h1>
