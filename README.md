@@ -167,11 +167,18 @@ python scripts/fetch_and_summarize.py --dry-run
 python scripts/fetch_and_summarize.py --date 2026-07-26 --dry-run
 ```
 
+記事本文は通常HTMLを直接取得して抽出しますが、Twitter/X のようにJavaScriptで描画される
+サイトは本文が取れないため、[r.jina.ai](https://r.jina.ai/) 経由でレンダリング済みの
+テキストを取得します。他のサイトでも本文が取れなかった場合は r.jina.ai にフォールバックします。
+
 ### 環境変数
 
 ```bash
 # Gemini API キー（GitHub Actions用）
 GEMINI_API_KEY=your_api_key_here
+
+# r.jina.ai の API キー（任意。未設定でも動作しますが、設定するとレート制限が緩和されます）
+JINA_API_KEY=your_jina_api_key_here
 ```
 
 ## 🚀 デプロイ

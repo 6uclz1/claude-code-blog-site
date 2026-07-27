@@ -42,6 +42,8 @@ jobs:
       - name: Run fetch and summarize script in Docker
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # 任意。未設定でも r.jina.ai は匿名で利用できる
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
         run: |
           docker compose run --rm python-scripts sh -c "
             pip install -r requirements.txt &&
