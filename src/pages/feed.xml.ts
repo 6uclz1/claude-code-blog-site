@@ -30,19 +30,22 @@ export const GET: APIRoute = async ({ site }) => {
     ? posts[0]!.data.date.toISOString()
     : new Date(0).toISOString();
 
+  // type="html" の要素の中身はHTMLなので、テキストはHTML用とXML用に二重にエスケープする。
+  // 1回だけだとリーダー側でXMLを解いた結果が `<Suspense>` のようなHTMLタグになり、
+  // その部分が表示から消えてしまう。
+  const escapeHtmlText = (value: string) => escapeXml(escapeXml(value));
+
   // Slack などHTMLを落として表示するクライアントでも行が潰れないよう、
-  // <br /> と実際の改行の両方を入れる。
-  // type="html" の中身はHTMLなので、タイトルはHTML用とXML用に二重にエスケープし
-  // （`<Suspense>` のような文字列がタグとして消えないようにする）、<br /> はXMLのみ。
+  // <br /> と実際の改行の両方を入れる。<br /> はタグとして効かせたいのでXMLのみエスケープ。
   const summaryHtml = (lines: string[]) =>
-    lines.map((line) => escapeXml(escapeXml(line))).join('&lt;br /&gt;\n');
+    lines.map(escapeHtmlText).join('&lt;br /&gt;\n');
 
   const entry = (post: Post) => {
     const url = absoluteUrl(baseUrl, `${permalinkToParam(post.data.permalink)}/`);
     const published = post.data.date.toISOString();
     const summary = feedSummaryLines(post.body ?? '', post.data.excerpt);
     return `  <entry>
-    <title type="html">${escapeXml(post.data.title)}</title>
+    <title type="html">${escapeHtmlText(post.data.title)}</title>
     <link href="${escapeXml(url)}" rel="alternate" type="text/html" title="${escapeXml(post.data.title)}"/>
     <published>${published}</published>
     <updated>${published}</updated>
@@ -62,7 +65,7 @@ export const GET: APIRoute = async ({ site }) => {
   <link href="${escapeXml(baseUrl.href)}" rel="alternate" type="text/html"/>
   <updated>${updated}</updated>
   <id>${escapeXml(baseUrl.href)}</id>
-  <title type="html">${escapeXml(SITE.title)}</title>
+  <title type="html">${escapeHtmlText(SITE.title)}</title>
   <subtitle>${escapeXml(SITE.description)}</subtitle>
   <author><name>${escapeXml(SITE.author)}</name></author>
 ${posts.map(entry).join('\n')}
