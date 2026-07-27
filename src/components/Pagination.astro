@@ -1,5 +1,5 @@
 ---
-import { withBase } from '../lib/posts';
+import { pagePath } from '../lib/posts';
 
 interface Props {
   currentPage: number;
@@ -7,9 +7,6 @@ interface Props {
 }
 
 const { currentPage, totalPages } = Astro.props;
-
-// Jekyll の paginate_path: "/page:num/" と同じURLを維持する（1ページ目は "/"）
-const pagePath = (num: number) => withBase(num === 1 ? '/' : `/page${num}/`);
 
 /**
  * ミニマルに保つため、先頭・末尾と現在地の前後だけを並べ、

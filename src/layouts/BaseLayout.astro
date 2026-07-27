@@ -8,12 +8,32 @@ import '../styles/global.css';
 interface Props {
   title?: string;
   description?: string;
+  /** 記事ページは article、それ以外は website（OGP） */
+  ogType?: 'website' | 'article';
+  /** 記事の公開日時（OGP の article:published_time） */
+  publishedTime?: Date;
+  /** 検索結果に出す必要がないページ（ページ送りの2ページ目以降など） */
+  noindex?: boolean;
+  /** ページ送りの前後（rel=prev/next） */
+  prevUrl?: string;
+  nextUrl?: string;
 }
 
-const { title, description } = Astro.props;
+const {
+  title,
+  description,
+  ogType = 'website',
+  publishedTime,
+  noindex = false,
+  prevUrl,
+  nextUrl,
+} = Astro.props;
+
 const pageTitle = title ? `${title} | ${SITE.title}` : SITE.title;
+const pageDescription = description ?? SITE.description;
 const feedUrl = withBase('/feed.xml');
 const canonical = new URL(Astro.url.pathname, Astro.site);
+const absolute = (path: string) => new URL(path, Astro.site).href;
 ---
 
 <!DOCTYPE html>
@@ -24,8 +44,31 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#09090b" />
     <title>{pageTitle}</title>
-    <meta name="description" content={description ?? SITE.description} />
+    <meta name="description" content={pageDescription} />
     <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex, follow" />}
+    {prevUrl && <link rel="prev" href={absolute(prevUrl)} />}
+    {nextUrl && <link rel="next" href={absolute(nextUrl)} />}
+
+    <!-- SNS で共有されたときにタイトルと説明が出るようにする -->
+    <meta property="og:type" content={ogType} />
+    <meta property="og:site_name" content={SITE.title} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDescription} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content="ja_JP" />
+    {
+      publishedTime && (
+        <meta
+          property="article:published_time"
+          content={publishedTime.toISOString()}
+        />
+      )
+    }
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={pageDescription} />
+
     <link
       rel="alternate"
       type="application/atom+xml"

@@ -1,0 +1,17 @@
+---
+// GitHub Pages は 404.html をそのまま404ページとして返す
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { withBase } from '../lib/posts';
+---
+
+<BaseLayout title="ページが見つかりません" noindex>
+  <section class="page-section">
+    <div class="page-heading">
+      <h1>404</h1>
+      <p class="eyebrow">お探しのページは見つかりませんでした。</p>
+    </div>
+    <nav class="post-nav" aria-label="記事ナビゲーション">
+      <a class="post-nav__back" href={withBase('/')}>← 記事一覧へ</a>
+    </nav>
+  </section>
+</BaseLayout>
