@@ -45,35 +45,36 @@ class TestCheckLog(unittest.TestCase):
             os.unlink(path)
 
     def test_clean_log_passes(self):
-        self.assertEqual(self._errors('Generating... done in 1.2 seconds.\n'), [])
+        self.assertEqual(self._errors('[build] 361 page(s) built in 5.41s\n'), [])
 
     def test_yaml_exception_is_detected(self):
         errors = self._errors(
-            'Error: YAML Exception reading /app/_posts/2025-12-18-hatena-bookmarks.md: '
-            'did not find expected key\n')
+            'YAMLException: end of the stream or a document separator is expected '
+            '(_posts/2025-12-18-hatena-bookmarks.md)\n')
         self.assertEqual(len(errors), 1)
         self.assertIn('YAML', errors[0])
 
+    def test_schema_error_is_detected(self):
+        errors = self._errors(
+            '[ERROR] [InvalidContentEntryDataError] posts → 2025-12-18-hatena-bookmarks '
+            'data does not match collection schema.\n')
+        # [ERROR] とスキーマ不一致の両方に当たる
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(any('スキーマ' in e for e in errors))
+
     def test_url_conflict_is_detected(self):
         errors = self._errors(
-            '          Conflict: The following destination is shared by multiple files.\n'
-            '                    /app/_site/2026/07/07/hatena-bookmarks/index.html\n')
+            'Error: permalink が重複しています: /2026/07/07/hatena-bookmarks/ '
+            '(2026-07-07-hatena-bookmarks.md と 2026-07-07-bookmark-summary.md)\n')
         self.assertEqual(len(errors), 1)
         self.assertIn('同じURL', errors[0])
 
     def test_ansi_colored_log_is_detected(self):
-        """Jekyll はファイルへリダイレクトしても色付けコードを出す"""
+        """Astro はファイルへリダイレクトしても色付けコードを出す"""
         errors = self._errors(
-            '\x1b[33m          Conflict: The following destination is shared by multiple files.'
-            '\x1b[0m\n')
+            '\x1b[31m[ERROR]\x1b[0m Could not render /2026/07/07/hatena-bookmarks/\n')
         self.assertEqual(len(errors), 1)
-        self.assertIn('同じURL', errors[0])
-
-    def test_liquid_warning_is_detected(self):
-        errors = self._errors(
-            'Liquid Warning: Liquid syntax error (line 47): '
-            '[:end_of_string] is not a valid expression in "{{ }}"\n')
-        self.assertEqual(len(errors), 1)
+        self.assertIn('エラー', errors[0])
 
     def test_missing_log_is_reported(self):
         errors = []

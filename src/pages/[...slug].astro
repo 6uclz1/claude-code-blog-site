@@ -1,0 +1,41 @@
+---
+import type { GetStaticPaths } from 'astro';
+import { render } from 'astro:content';
+import PostLayout from '../layouts/PostLayout.astro';
+import { getSortedPosts, permalinkToParam, type Post } from '../lib/posts';
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  const posts = await getSortedPosts();
+  const seen = new Map<string, string>();
+
+  return posts.map((post) => {
+    const slug = permalinkToParam(post.data.permalink);
+
+    // permalink が重複すると片方の記事がサイトから消えるため、ビルドを止める
+    const duplicate = seen.get(slug);
+    if (duplicate) {
+      throw new Error(
+        `permalink が重複しています: /${slug}/ (${post.id} と ${duplicate})`
+      );
+    }
+    seen.set(slug, post.id);
+
+    return { params: { slug }, props: { post } };
+  });
+};
+
+interface Props {
+  post: Post;
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+---
+
+<PostLayout
+  title={post.data.title}
+  date={post.data.date}
+  excerpt={post.data.excerpt}
+>
+  <Content />
+</PostLayout>

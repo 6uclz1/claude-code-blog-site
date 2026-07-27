@@ -9,44 +9,50 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       - name: Build Docker services
-        run: docker compose build
-      
+        run: docker compose build python-scripts
+
       - name: Run tests with coverage
         run: |
           docker compose run --rm python-scripts sh -c "
             pip install -r requirements.txt &&
             python test_runner.py --coverage
           "
-      
-      - name: Check Jekyll build
-        run: |
-          docker compose run --rm jekyll sh -c "
-            bundle install &&
-            bundle exec jekyll doctor &&
-            bundle exec jekyll build > /app/build.log 2>&1
-            code=\$?
-            cat /app/build.log
-            exit \$code
-          "
 
-      # Jekyll は URL衝突 や Liquid警告 を出しても exit 0 を返すため、
-      # ビルドログと feed.xml を検査して壊れた状態をマージさせない
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Build with Astro
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee build.log
+
+      # ビルドが成功しても記事が壊れたままマージされることがあるため、
+      # ビルドログと feed.xml を検査する
       - name: Validate build output
-        run: python3 scripts/validate_build.py --log build.log --feed _site/feed.xml
+        run: python3 scripts/validate_build.py --log build.log --feed dist/feed.xml
 
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: jekyll-build-log
+          name: astro-build-log
           path: build.log
           if-no-files-found: ignore

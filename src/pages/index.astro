@@ -1,0 +1,16 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PostList from '../components/PostList.astro';
+import Pagination from '../components/Pagination.astro';
+import { getSortedPosts, PAGE_SIZE } from '../lib/posts';
+
+const posts = await getSortedPosts();
+const totalPages = Math.max(1, Math.ceil(posts.length / PAGE_SIZE));
+---
+
+<BaseLayout>
+  <div class="home">
+    <PostList posts={posts.slice(0, PAGE_SIZE)} />
+    <Pagination currentPage={1} totalPages={totalPages} />
+  </div>
+</BaseLayout>

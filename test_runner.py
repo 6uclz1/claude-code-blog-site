@@ -17,7 +17,7 @@ import argparse
 
 def run_pytest(with_coverage=False):
     """pytestでテストを実行"""
-    cmd = ['python', '-m', 'pytest', '-v', 'tests/', '--ignore=_site', '--ignore=.jekyll-cache']
+    cmd = ['python', '-m', 'pytest', '-v', 'tests/', '--ignore=dist', '--ignore=.astro']
     
     if with_coverage:
         try:

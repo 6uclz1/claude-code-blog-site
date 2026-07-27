@@ -1,0 +1,34 @@
+---
+import { withBase } from '../lib/posts';
+
+interface Props {
+  currentPage: number;
+  totalPages: number;
+}
+
+const { currentPage, totalPages } = Astro.props;
+
+// Jekyll の paginate_path: "/page:num/" と同じURLを維持する（1ページ目は "/"）
+const pagePath = (num: number) => withBase(num === 1 ? '/' : `/page${num}/`);
+const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+---
+
+{
+  totalPages > 1 && (
+    <div class="pagination">
+      {currentPage > 1 && <a href={pagePath(currentPage - 1)}>&laquo; 前へ</a>}
+
+      {pages.map((num) =>
+        num === currentPage ? (
+          <span class="current">{num}</span>
+        ) : (
+          <a href={pagePath(num)}>{num}</a>
+        )
+      )}
+
+      {currentPage < totalPages && (
+        <a href={pagePath(currentPage + 1)}>次へ &raquo;</a>
+      )}
+    </div>
+  )
+}

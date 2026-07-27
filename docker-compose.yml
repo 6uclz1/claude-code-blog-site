@@ -1,17 +1,14 @@
-version: '3.8'
-
 services:
-  jekyll:
+  astro:
     build: .
     ports:
       - "4000:4000"
-      - "35729:35729"
     volumes:
       - .:/app
-      - bundle_cache:/usr/local/bundle
+      - node_modules:/app/node_modules
     environment:
-      - JEKYLL_ENV=development
-    command: bundle exec jekyll serve --host 0.0.0.0 --port 4000 --livereload --force_polling --baseurl ""
+      - NODE_ENV=development
+    command: npm run dev
 
   python-scripts:
     image: python:3.11-alpine
@@ -23,4 +20,4 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
 
 volumes:
-  bundle_cache:
+  node_modules:
