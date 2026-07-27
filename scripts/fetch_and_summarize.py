@@ -207,20 +207,11 @@ URL: {url}
     
 
     @staticmethod
-    def escape_liquid(text):
-        """本文中の Liquid タグ（{{ ... }} / {% ... %}）をエスケープする
-
-        記事タイトルや要約に {{ や {% が含まれていると Jekyll のビルド時に
-        Liquid として解釈され、警告や本文の欠落が発生するため raw で囲む。
-        """
-        return re.sub(r'\{\{|\{%', lambda m: '{% raw %}' + m.group(0) + '{% endraw %}', text)
-
-    @staticmethod
     def build_front_matter(front_matter):
         """YAMLとして安全なフロントマターを生成する
 
         タイトルや要約に含まれる " や \\ を手動で埋め込むとYAMLが壊れ、
-        Jekyllが記事を読み込めずRSSから記事が消えるため、必ずyaml.dumpを通す。
+        Astroが記事を読み込めずRSSから記事が消えるため、必ずyaml.dumpを通す。
         """
         body = yaml.dump(
             front_matter,
@@ -265,7 +256,6 @@ URL: {url}
         permalink = f"/{date.strftime('%Y/%m/%d')}/hatena-bookmarks/"
 
         front_matter = self.build_front_matter({
-            'layout': 'post',
             'title': f"はてなブックマーク {date.strftime('%Y年%m月%d日')} の記事まとめ ({article_count}件)",
             'date': publish_date_str,
             'permalink': permalink,
@@ -280,13 +270,13 @@ URL: {url}
 
         # 各記事を追加
         for i, (entry, summary) in enumerate(entries_summaries, 1):
-            content += f"""## {i}. {self.escape_liquid(entry['title'])}
+            content += f"""## {i}. {entry['title']}
 
 **URL:** [{entry['url']}]({entry['url']})
 
 ### AI要約
 
-{self.escape_liquid(summary)}
+{summary}
 
 ---
 

@@ -4,58 +4,58 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Jekyll-based Japanese blog site built with Ruby and Jekyll 4.3.0. The site uses a simple, modern design with pagination support and syntax highlighting.
+This is an Astro-based Japanese blog site (Astro 7, static output). The site uses a
+simple, modern design with pagination support and syntax highlighting. It was migrated
+from Jekyll, so posts still live in `_posts/` and all published URLs are unchanged.
 
 ## Development Commands
 
 ### Local Development
 ```bash
-# Install Ruby dependencies
-bundle install
+# Install Node dependencies
+npm ci
 
-# Start Jekyll development server with live reload
-bundle exec jekyll serve
+# Start the dev server (http://localhost:4000/claude-code-blog-site/)
+npm run dev
 
-# Build the site for production
-bundle exec jekyll build
+# Build the site for production (output: dist/)
+npm run build
 
-# Build and watch for changes (development)
-bundle exec jekyll build --watch
+# Preview the production build
+npm run preview
 ```
 
 ### Testing and Validation
 ```bash
-# Check Jekyll configuration
-bundle exec jekyll doctor
+# Type check Astro/TypeScript files
+npm run check
 
 # Build and validate before publishing (公開前ゲートと同じ検証)
-bundle exec jekyll build > build.log 2>&1
-python scripts/validate_build.py --log build.log --feed _site/feed.xml
-
-# Validate HTML output (if htmlproofer is added)
-bundle exec htmlproofer ./_site
+npm run build 2>&1 | tee build.log
+python scripts/validate_build.py --log build.log --feed dist/feed.xml
 ```
 
-**Publishing gate**: `_config.yml` sets `strict_front_matter: true` so broken front
-matter fails the build. Jekyll still exits 0 on URL conflicts and Liquid warnings, so
-`scripts/validate_build.py` scans the build log and the generated `feed.xml`
-(empty titles, duplicate URLs, build-time timestamps) and blocks the deploy.
-The daily automation runs this gate *before* committing — nothing that fails
-validation is committed or published, and a failure opens an issue automatically.
+**Publishing gate**: broken front matter fails the build via the content collection
+schema in `src/content.config.ts`, and duplicate permalinks throw explicitly in
+`src/pages/[...slug].astro`. On top of that, `scripts/validate_build.py` scans the
+build log and the generated `feed.xml` (empty titles, duplicate URLs, build-time
+timestamps) and blocks the deploy. The daily automation runs this gate *before*
+committing — nothing that fails validation is committed or published, and a failure
+opens an issue automatically.
 
 ### Docker Development (Recommended)
 ```bash
-# Start Jekyll development server with Docker
-docker-compose up jekyll
+# Start the Astro dev server with Docker
+docker compose up astro
 
-# Run Jekyll in background
-docker-compose up -d jekyll
+# Run in background
+docker compose up -d astro
 
 # Stop services
-docker-compose down
+docker compose down
 
 # Run Python scripts with Docker
-docker-compose run --rm python-scripts sh -c "
+docker compose run --rm python-scripts sh -c "
   pip install -r requirements.txt &&
   python scripts/fetch_and_summarize.py
 "
@@ -63,11 +63,11 @@ docker-compose run --rm python-scripts sh -c "
 
 ### Direct Development (Alternative)
 ```bash
-# Install Ruby dependencies
-bundle install
+# Install Node dependencies
+npm ci
 
-# Start Jekyll development server
-bundle exec jekyll serve
+# Start the dev server
+npm run dev
 
 # Install Python dependencies for automation scripts
 pip install -r requirements.txt
@@ -79,7 +79,7 @@ python scripts/fetch_and_summarize.py
 ### Testing
 ```bash
 # Run all tests with coverage (Docker)
-docker-compose run --rm python-scripts sh -c "
+docker compose run --rm python-scripts sh -c "
   pip install -r requirements.txt &&
   python test_runner.py --coverage
 "
@@ -96,44 +96,54 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
 ## Site Architecture
 
 ### Core Structure
-- **_config.yml**: Jekyll configuration with Japanese locale settings, pagination (5 posts per page), and Rouge syntax highlighting
-- **Gemfile**: Ruby dependencies including jekyll-paginate plugin
+- **astro.config.mjs**: `site` + `base` (GitHub Pages baseurl `/claude-code-blog-site`),
+  `trailingSlash: 'always'`, Shiki syntax highlighting
+- **package.json**: Node dependencies (astro, marked)
 - **Docker Environment**:
-  - `Dockerfile`: Jekyll development environment with live reload
-  - `Dockerfile.production`: Multi-stage build for production deployment
-  - `docker-compose.yml`: Development services (Jekyll + Python scripts)
-- **Jekyll Templates**:
-  - `_layouts/`: Template files (`default.html`, `post.html`)
-  - `_includes/`: Reusable components (`header.html`, `footer.html`)
-  - `_posts/`: Blog posts in Markdown with YAML front matter
-  - `assets/css/`: Custom CSS styling
+  - `Dockerfile`: Astro development environment
+  - `Dockerfile.production`: Multi-stage build (Astro build → nginx)
+  - `docker-compose.yml`: Development services (astro + python-scripts)
+- **Astro sources**:
+  - `src/content.config.ts`: content collection reading `_posts/**/*.md`
+  - `src/site.ts`: site title / description / author / feed limit
+  - `src/lib/posts.ts`: sorting, permalink→URL, date formatting, excerpt rendering
+  - `src/layouts/`: `BaseLayout.astro`, `PostLayout.astro`
+  - `src/components/`: `Header`, `Footer`, `PostList`, `Pagination`
+  - `src/pages/`: `index.astro`, `page[num].astro`, `[...slug].astro`, `feed.xml.ts`
+  - `src/styles/global.css`: custom CSS (imported by `BaseLayout`)
+  - `_posts/`: blog posts in Markdown with YAML front matter
 - **Automation Pipeline**:
   - `scripts/fetch_and_summarize.py`: Hatena bookmark summarization with Gemini AI
+  - `scripts/validate_build.py`: pre-publish gate over the build log and feed.xml
   - `tests/`: Unit tests with pytest and mocking for Gemini API
   - `test_runner.py`: Test execution script with coverage support
   - `requirements.txt`: Python dependencies (production + testing)
 - **CI/CD**: `.github/workflows/` for automated deployment and content updates
 
 ### Key Features
-- **Pagination**: Configured for 5 posts per page with Japanese navigation ("前へ"/"次へ")
+- **Pagination**: 10 posts per page with Japanese navigation ("前へ"/"次へ"); page 1 is
+  `/`, later pages are `/page2/`, `/page3/`, … (the Jekyll `paginate_path` is preserved)
+- **Atom feed**: `src/pages/feed.xml.ts` emits `/feed.xml` in the same Atom format
+  jekyll-feed produced, so existing subscribers and the publishing gate keep working
 - **Responsive Design**: Mobile-first CSS with breakpoints at 768px
 - **Japanese Localization**: Date formatting and UI text in Japanese
-- **Syntax Highlighting**: Rouge highlighter for code blocks
-- **Modern CSS**: Uses Flexbox, CSS Grid patterns, and smooth transitions
+- **Syntax Highlighting**: Shiki, at build time
 - **Automated Content**: Daily Hatena bookmark summarization using Gemini AI
 
 ### Content Management
-- Blog posts use YAML front matter with `layout: post`, `title`, `date`, and `excerpt` fields
-- Permalinks follow the pattern: `/:year/:month/:day/:title/`
+- Blog posts use YAML front matter with `title`, `date`, `permalink`, and `excerpt`
+- The `permalink` front matter is the article URL; it follows `/:year/:month/:day/:title/`
+  and must match the date in the filename (enforced by `tests/test_posts_integrity.py`)
+- Dates are rendered in UTC so the displayed date matches the permalink date
+- Posts are plain Markdown (not MDX), so `{{ }}` and `{% %}` need no escaping
 - Japanese content with proper typography and line-height optimization
-- Code examples include CSS, JavaScript, and HTML snippets
 
 ### Styling System
 - **Typography**: Uses Japanese-friendly font stack with Helvetica Neue and Hiragino Sans
-- **Color Palette**: 
-  - Primary: #2c3e50 (dark blue-gray)
-  - Accent: #3498db (blue)
-  - Background: #fafafa (light gray)
+- **Color Palette**:
+  - Background: #0f172a (dark navy)
+  - Card: #1e293b
+  - Accent: #60a5fa (blue)
 - **Components**: Card-based post layout with hover effects and shadows
 - **Responsive**: Mobile-optimized with adjusted padding and font sizes
 
@@ -145,13 +155,13 @@ The `fetch_and_summarize.py` script implements a comprehensive automated content
 1. **RSS Processing**: Fetches Hatena bookmark RSS feed and filters entries from yesterday using multiple date detection methods (dc_date, URL patterns, published_parsed)
 2. **Content Extraction**: Scrapes full article content using BeautifulSoup with fallback selectors for different site structures
 3. **AI Summarization**: Uses Gemini API to generate 3-5 sentence summaries with error handling and fallback messages
-4. **Markdown Generation**: Creates Jekyll-compatible posts with YAML front matter, excerpts, and proper Japanese formatting
-5. **Deployment**: GitHub Actions triggers Jekyll rebuild and GitHub Pages deployment
+4. **Markdown Generation**: Writes posts to `_posts/` with YAML front matter (built via `yaml.dump`), excerpts, and proper Japanese formatting
+5. **Deployment**: GitHub Actions builds with Astro, runs the publishing gate, then deploys to GitHub Pages
 
 ### Docker-based Development
-- **Containerized Environment**: Both Jekyll and Python environments run in separate Docker containers
-- **Development Workflow**: `docker-compose up jekyll` provides live-reload development server at localhost:4000
-- **CI/CD Integration**: GitHub Actions uses Docker builds for consistent environments
+- **Containerized Environment**: The Astro dev server and the Python scripts run in separate containers
+- **Development Workflow**: `docker compose up astro` provides a hot-reloading dev server at localhost:4000
+- **CI/CD Integration**: GitHub Actions builds the site with `actions/setup-node`; Docker is used for the Python scripts
 - **Testing Isolation**: Tests run in containerized environment with mocked external dependencies
 
 ### Testing Strategy
@@ -168,6 +178,7 @@ The `fetch_and_summarize.py` script implements a comprehensive automated content
 - **IMPORTANT**: Any changes you make must be made through a pull request so we can review them here.
 - All content and UI text is in Japanese
 - Date formatting uses Japanese format (年月日)
-- The site is configured for GitHub Pages deployment with baseurl "/claude-code-blog-site"
+- The site is configured for GitHub Pages deployment with base "/claude-code-blog-site"
+- Use `withBase()` from `src/lib/posts.ts` for internal links so the base path is applied
 - Posts should include proper excerpts for homepage display
 - CSS follows BEM-like naming conventions for maintainability

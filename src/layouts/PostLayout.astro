@@ -1,0 +1,29 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import { formatDateJa, toDescription } from '../lib/posts';
+import { SITE } from '../site';
+
+interface Props {
+  title: string;
+  date: Date;
+  excerpt?: string;
+}
+
+const { title, date, excerpt } = Astro.props;
+const description = excerpt ? toDescription(excerpt) : SITE.description;
+---
+
+<BaseLayout title={title} description={description}>
+  <article class="post">
+    <header class="post-header">
+      <h1>{title}</h1>
+      <div class="post-meta">
+        <time datetime={date.toISOString()}>{formatDateJa(date)}</time>
+      </div>
+    </header>
+
+    <div class="post-content">
+      <slot />
+    </div>
+  </article>
+</BaseLayout>

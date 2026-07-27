@@ -1,18 +1,11 @@
-# Jekyll generated files
-_site/
-.sass-cache/
-.jekyll-cache/
-.jekyll-metadata
+# Astro generated files
+dist/
+.astro/
 
 # Test generated files
 .pytest_cache/
 htmlcov/
 .coverage
-
-# Ruby and Bundler
-Gemfile.lock
-vendor/
-.bundle/
 
 # Docker generated files
 docker-compose.override.yml

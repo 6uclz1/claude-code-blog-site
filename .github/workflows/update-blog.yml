@@ -27,8 +27,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Build Docker services
-        run: docker compose build
+        run: docker compose build python-scripts
 
       - name: Run fetch and summarize script in Docker
         env:
@@ -57,22 +66,17 @@ jobs:
             python test_runner.py
           "
 
-      - name: Build Jekyll site
+      - name: Build Astro site
         if: steps.verify-changed-files.outputs.changed == 'true'
         run: |
-          docker compose run --rm -e JEKYLL_ENV=production jekyll sh -c "
-            bundle install &&
-            bundle exec jekyll build > /app/build.log 2>&1
-            code=\$?
-            cat /app/build.log
-            exit \$code
-          "
+          set -o pipefail
+          npm run build 2>&1 | tee build.log
 
-      # Jekyll は URL衝突 や Liquid警告 を出しても exit 0 を返すため、
+      # ビルドが成功しても記事が壊れたまま公開されることがあるため、
       # ビルドログと feed.xml を検査してから公開する
       - name: Validate build output
         if: steps.verify-changed-files.outputs.changed == 'true'
-        run: python3 scripts/validate_build.py --log build.log --feed _site/feed.xml --min-entries 1
+        run: python3 scripts/validate_build.py --log build.log --feed dist/feed.xml --min-entries 1
 
       - name: Upload build output on failure
         if: failure()
@@ -107,7 +111,7 @@ jobs:
         if: steps.verify-changed-files.outputs.changed == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './_site'
+          path: './dist'
 
       - name: Deploy to GitHub Pages
         if: steps.verify-changed-files.outputs.changed == 'true'

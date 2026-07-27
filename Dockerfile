@@ -1,18 +1,13 @@
-FROM ruby:3.1-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache \
-    build-base \
-    git \
-    tzdata
+COPY package.json package-lock.json ./
 
-COPY Gemfile ./
-
-RUN bundle install
+RUN npm ci
 
 COPY . .
 
 EXPOSE 4000
 
-CMD ["bundle", "exec", "jekyll", "serve", "--host", "0.0.0.0", "--port", "4000", "--livereload", "--baseurl", ""]
+CMD ["npm", "run", "dev"]

@@ -2,13 +2,12 @@
 # -*- coding: utf-8 -*-
 """ビルド結果を公開前に検証するスクリプト
 
-Jekyll は記事が壊れていても警告を出すだけで exit 0 を返すことがあるため
-(URL衝突・Liquid警告は strict_front_matter でも検知できない)、
-ビルドログと生成された feed.xml を機械的に検査して、
-問題があれば非ゼロで終了する。
+ビルドが成功しても記事が壊れたまま公開されることがあるため
+(タイトルなし・URL衝突・記事の消失)、ビルドログと生成された feed.xml を
+機械的に検査して、問題があれば非ゼロで終了する。
 
 使い方:
-    python scripts/validate_build.py --log build.log --feed _site/feed.xml
+    python scripts/validate_build.py --log build.log --feed dist/feed.xml
 """
 
 import argparse
@@ -20,17 +19,18 @@ from datetime import datetime, timedelta, timezone
 
 ATOM = '{http://www.w3.org/2005/Atom}'
 
-# Jekyll はファイルへリダイレクトしても色付けのエスケープシーケンスを出すため、
+# Astro はファイルへリダイレクトしても色付けのエスケープシーケンスを出すため、
 # パターンマッチの前に取り除く
 ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
 
 # ビルドログに出たら公開を止めるパターン
 LOG_PATTERNS = [
-    (re.compile(r'YAML Exception'), 'フロントマターのYAMLが壊れている記事がある'),
-    (re.compile(r'Conflict: The following destination'),
+    (re.compile(r'\[ERROR\]'), 'ビルドがエラーを報告している'),
+    (re.compile(r'InvalidContentEntryDataError|does not match collection schema'),
+     'フロントマターがスキーマに合わない記事がある'),
+    (re.compile(r'YAMLException|YAML Exception'), 'フロントマターのYAMLが壊れている記事がある'),
+    (re.compile(r'permalink が重複|Duplicate route'),
      '複数の記事が同じURLに出力されている(片方が消える)'),
-    (re.compile(r'Liquid Warning'), '本文中のLiquidタグが解釈されて警告が出ている'),
-    (re.compile(r'Error reading'), '読み込めない記事がある'),
 ]
 
 # 記事のURLは /YYYY/MM/DD/slug/ 形式
@@ -38,7 +38,7 @@ POST_URL_RE = re.compile(r'/\d{4}/\d{2}/\d{2}/[^/]+/$')
 
 
 def check_log(path, errors):
-    """Jekyllのビルドログを検査する"""
+    """Astroのビルドログを検査する"""
     if not path:
         return
     if not os.path.exists(path):
@@ -130,8 +130,8 @@ def check_feed(path, errors, min_entries=1):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='ビルド結果を公開前に検証する')
-    parser.add_argument('--log', help='Jekyllのビルドログ')
-    parser.add_argument('--feed', default='_site/feed.xml', help='生成された feed.xml')
+    parser.add_argument('--log', help='Astroのビルドログ')
+    parser.add_argument('--feed', default='dist/feed.xml', help='生成された feed.xml')
     parser.add_argument('--min-entries', type=int, default=1, help='feed.xml の最低entry数')
     args = parser.parse_args(argv)
 

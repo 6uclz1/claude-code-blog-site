@@ -5,10 +5,8 @@ README.md
 Dockerfile
 docker-compose.yml
 .dockerignore
-_site
-.sass-cache
-.jekyll-cache
-.jekyll-metadata
+dist
+.astro
 node_modules
 *.log
 .DS_Store

@@ -1,10 +1,5 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-# Sample workflow for building and deploying a Jekyll site to GitHub Pages
-name: Deploy Jekyll site to Pages
+# Astro でビルドしたサイトを GitHub Pages に公開するワークフロー
+name: Deploy Astro site to Pages
 
 on:
   # Runs on pushes targeting the default branch
@@ -33,27 +28,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Build Jekyll with Docker
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build with Astro
         run: |
-          docker compose build jekyll
-          docker compose run --rm -e JEKYLL_ENV=production jekyll sh -c "
-            bundle install &&
-            bundle exec jekyll build > /app/build.log 2>&1
-            code=\$?
-            cat /app/build.log
-            exit \$code
-          "
-      # Jekyll は URL衝突 や Liquid警告 を出しても exit 0 を返すため、
+          set -o pipefail
+          npm run build 2>&1 | tee build.log
+      # ビルドが成功しても記事が壊れたまま公開されることがあるため、
       # ビルドログと feed.xml を検査してから公開する
       - name: Validate build output
-        run: python3 scripts/validate_build.py --log build.log --feed _site/feed.xml --min-entries 1
+        run: python3 scripts/validate_build.py --log build.log --feed dist/feed.xml --min-entries 1
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: jekyll-build-log
+          name: astro-build-log
           path: build.log
           if-no-files-found: ignore
       - name: Setup Pages
@@ -62,7 +56,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './_site'
+          path: './dist'
 
   # Deployment job
   deploy:

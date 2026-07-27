@@ -1,20 +1,20 @@
 # Claude Code Blog Site
 
-JekyllとRubyを使用して構築された日本語のブログサイトです。モダンなデザインとページネーション機能、シンタックスハイライト機能を備えています。
+Astro で構築された日本語のブログサイトです。モダンなデザインとページネーション機能、シンタックスハイライト機能を備えています。
 
 ## 🚀 機能
 
 - **レスポンシブデザイン**: モバイルファーストのCSS設計
 - **日本語対応**: 日本語ローカライゼーション対応
-- **ページネーション**: 1ページ5記事の設定
-- **シンタックスハイライト**: Rougeハイライターによるコードブロック対応
+- **ページネーション**: 1ページ10記事の設定
+- **シンタックスハイライト**: Shikiによるビルド時ハイライト
+- **Atomフィード**: `/feed.xml` を配信
 - **自動コンテンツ生成**: Gemini AIを使用したはてなブックマーク要約の自動生成
 - **Docker対応**: 開発環境とプロダクション環境の両方でDocker対応
 
 ## 📋 必要な環境
 
-- Ruby 3.0以上
-- Jekyll 4.3.0
+- Node.js 22以上
 - Docker & Docker Compose（推奨）
 - Python 3.8以上（自動化スクリプト用）
 
@@ -27,24 +27,24 @@ JekyllとRubyを使用して構築された日本語のブログサイトです�
 git clone https://github.com/6uclz1/claude-code-blog-site.git
 cd claude-code-blog-site
 
-# Jekyll開発サーバーを起動
-docker-compose up jekyll
+# 開発サーバーを起動
+docker compose up astro
 
 # バックグラウンドで実行
-docker-compose up -d jekyll
+docker compose up -d astro
 
 # サービスを停止
-docker-compose down
+docker compose down
 ```
 
 ### 直接開発環境を構築
 
 ```bash
-# Ruby依存関係をインストール
-bundle install
+# Node依存関係をインストール
+npm ci
 
-# Jekyll開発サーバーを起動
-bundle exec jekyll serve
+# 開発サーバーを起動（http://localhost:4000/claude-code-blog-site/）
+npm run dev
 
 # Python依存関係をインストール（自動化スクリプト用）
 pip install -r requirements.txt
@@ -52,30 +52,37 @@ pip install -r requirements.txt
 
 ## 🖥️ 開発コマンド
 
-### Jekyll関連
+### Astro関連
 
 ```bash
-# 開発サーバー起動（ライブリロード付き）
-bundle exec jekyll serve
+# 開発サーバー起動（ホットリロード付き）
+npm run dev
 
-# プロダクション用ビルド
-bundle exec jekyll build
+# プロダクション用ビルド（出力先: dist/）
+npm run build
 
-# 変更監視付きビルド
-bundle exec jekyll build --watch
+# ビルド結果をローカルで確認
+npm run preview
 
-# Jekyll設定の確認
-bundle exec jekyll doctor
+# 型チェック
+npm run check
+```
+
+### 公開前の検証
+
+```bash
+npm run build 2>&1 | tee build.log
+python scripts/validate_build.py --log build.log --feed dist/feed.xml
 ```
 
 ### Docker関連
 
 ```bash
-# Jekyll開発サーバー起動
-docker-compose up jekyll
+# 開発サーバー起動
+docker compose up astro
 
 # Pythonスクリプト実行
-docker-compose run --rm python-scripts sh -c "
+docker compose run --rm python-scripts sh -c "
   pip install -r requirements.txt &&
   python scripts/fetch_and_summarize.py
 "
@@ -85,7 +92,7 @@ docker-compose run --rm python-scripts sh -c "
 
 ```bash
 # 全テストをカバレッジ付きで実行（Docker）
-docker-compose run --rm python-scripts sh -c "
+docker compose run --rm python-scripts sh -c "
   pip install -r requirements.txt &&
   python test_runner.py --coverage
 "
@@ -101,20 +108,26 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
 ## 🏗️ プロジェクト構造
 
 ```
-├── _config.yml              # Jekyll設定ファイル
-├── Gemfile                  # Ruby依存関係
+├── astro.config.mjs         # Astro設定ファイル
+├── package.json             # Node依存関係
 ├── docker-compose.yml       # Docker開発環境設定
-├── Dockerfile              # Jekyll開発環境
-├── Dockerfile.production   # プロダクション環境
-├── _layouts/               # Jekyllテンプレート
-├── _includes/              # 再利用可能コンポーネント
-├── _posts/                 # ブログ記事（Markdown）
-├── assets/css/             # カスタムCSS
-├── scripts/                # 自動化スクリプト
-│   └── fetch_and_summarize.py
-├── tests/                  # ユニットテスト
-├── requirements.txt        # Python依存関係
-└── .github/workflows/      # CI/CD設定
+├── Dockerfile               # 開発環境
+├── Dockerfile.production    # プロダクション環境
+├── _posts/                  # ブログ記事（Markdown・コンテンツソース）
+├── src/
+│   ├── content.config.ts    # コンテンツコレクション定義
+│   ├── site.ts              # サイトのメタ情報
+│   ├── lib/posts.ts         # 記事の取得・整形ユーティリティ
+│   ├── layouts/             # レイアウト
+│   ├── components/          # 再利用可能コンポーネント
+│   ├── pages/               # ルーティング（一覧・記事・feed.xml）
+│   └── styles/global.css    # カスタムCSS
+├── scripts/                 # 自動化スクリプト
+│   ├── fetch_and_summarize.py
+│   └── validate_build.py
+├── tests/                   # ユニットテスト
+├── requirements.txt         # Python依存関係
+└── .github/workflows/       # CI/CD設定
 ```
 
 ## 📝 記事の作成
@@ -123,14 +136,16 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
 
 ```markdown
 ---
-layout: post
 title: "記事タイトル"
 date: 2024-01-01 12:00:00 +0900
+permalink: /2024/01/01/article-slug/
 excerpt: "記事の要約"
 ---
 
 記事の内容をここに記述...
 ```
+
+`permalink` がそのまま記事のURLになります（ファイル名の日付と一致させてください）。
 
 ## 🤖 自動化機能
 
@@ -141,7 +156,7 @@ excerpt: "記事の要約"
 1. **RSS処理**: はてなブックマークのRSSフィードを取得
 2. **コンテンツ抽出**: BeautifulSoupを使用した記事内容の抽出
 3. **AI要約**: Gemini APIを使用した3-5文の要約生成
-4. **Markdown生成**: Jekyll互換の記事ファイル生成
+4. **Markdown生成**: `_posts/` に記事ファイルを生成
 
 ### 環境変数
 
@@ -155,23 +170,24 @@ GEMINI_API_KEY=your_api_key_here
 GitHub Pagesを使用した自動デプロイが設定されています：
 
 1. `main` ブランチへのプッシュ
-2. GitHub ActionsでJekyllビルド実行
-3. GitHub Pagesへの自動デプロイ
+2. GitHub ActionsでAstroビルド実行
+3. `scripts/validate_build.py` による公開前検証
+4. GitHub Pagesへの自動デプロイ
 
 ## 🎨 カスタマイズ
 
 ### カラーパレット
 
-- **プライマリ**: #2c3e50（ダークブルーグレー）
-- **アクセント**: #3498db（ブルー）
-- **背景**: #fafafa（ライトグレー）
+- **背景**: #0f172a（ダークネイビー）
+- **カード**: #1e293b
+- **アクセント**: #60a5fa（ブルー）
 
 ### フォント
 
 日本語対応フォントスタックを使用：
 - Helvetica Neue
 - Hiragino Sans
-- メイリオ
+- Yu Gothic
 - sans-serif
 
 ## 📄 ライセンス

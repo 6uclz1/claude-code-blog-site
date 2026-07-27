@@ -268,7 +268,6 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
 
         front_matter = yaml.safe_load(match.group(1))
         self.assertIsInstance(front_matter, dict)
-        self.assertEqual(front_matter['layout'], 'post')
         self.assertIn('2025年06月21日', front_matter['title'])
         self.assertIn('Skillsは"業務マニュアル付きの道具箱"', front_matter['excerpt'])
         self.assertIn('パス C:\\Users\\test と : コロン', front_matter['excerpt'])
@@ -291,8 +290,12 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
 
         self.assertEqual(front_matter['permalink'], '/2025/06/21/hatena-bookmarks/')
 
-    def test_create_daily_markdown_post_escapes_liquid_tags(self):
-        """本文中のLiquidタグがエスケープされるテスト"""
+    def test_create_daily_markdown_post_keeps_braces_as_is(self):
+        """本文中の波括弧がそのまま残るテスト
+
+        Jekyll時代は {{ }} が Liquid として解釈されるため raw で囲んでいたが、
+        Astro は .md をテンプレートとして評価しないためエスケープ不要。
+        """
         entries_summaries = [
             ({'title': 'GitHub Actionsの${{ }}記法', 'url': 'https://example.com'},
              '`${{ secrets.TOKEN }}` を直接展開しない。{% if %} も同様。')
@@ -304,11 +307,9 @@ class TestHatenaBookmarkSummarizer(unittest.TestCase):
         with open('_posts/2025-06-21-hatena-bookmarks.md', encoding='utf-8') as f:
             body = f.read().split('\n---\n', 1)[1]
 
-        self.assertIn('{% raw %}{{{% endraw %}', body)
-        self.assertIn('{% raw %}{%{% endraw %}', body)
-        # raw で囲まれていない生の Liquid 開始タグが残っていないこと
-        self.assertIsNone(
-            re.search(r'(?<!\{% raw %\})\{\{(?!\{% endraw %\})', body.replace('{% raw %}{{{% endraw %}', '')))
+        self.assertIn('${{ secrets.TOKEN }}', body)
+        self.assertIn('{% if %}', body)
+        self.assertNotIn('{% raw %}', body)
 
     def test_create_daily_markdown_post_no_entries(self):
         """エントリがない場合のテスト"""
