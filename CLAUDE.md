@@ -160,13 +160,29 @@ on `:root` (`--bg` / `--fg` / `--muted` / `--line` / `--panel`, plus the `--cont
 ## Automation Architecture
 
 ### Content Generation Pipeline
-The `fetch_and_summarize.py` script implements a comprehensive automated content generation system:
+`fetch_and_summarize.py` is a set of small module-level functions (plus a `GeminiSummarizer`
+class) wired together by `run()`, with `Bookmark` / `Digest` dataclasses as the data passed
+between stages:
 
-1. **RSS Processing**: Fetches Hatena bookmark RSS feed and filters entries from yesterday using multiple date detection methods (dc_date, URL patterns, published_parsed)
-2. **Content Extraction**: Scrapes full article content using BeautifulSoup with fallback selectors for different site structures
-3. **AI Summarization**: Uses Gemini API to generate 3-5 sentence summaries with error handling and fallback messages
-4. **Markdown Generation**: Writes posts to `_posts/` with YAML front matter (built via `yaml.dump`), excerpts, and proper Japanese formatting
+1. **RSS Processing**: `fetch_entries()` + `select_bookmarks()` — collects every date an entry
+   carries (dc_date, entry-id URL pattern, published_parsed) and keeps the ones matching the
+   target day, de-duplicating by URL
+2. **Content Extraction**: `fetch_article_text()` scrapes the article with BeautifulSoup using
+   fallback selectors; returns `None` when nothing usable is found (the entry is then skipped)
+3. **AI Summarization**: `GeminiSummarizer.summarize()` asks Gemini for JSON
+   (`{"summary": ..., "points": [...]}`) via `response_mime_type: application/json`, and
+   `parse_digest()` normalizes/truncates it — prompt wording alone doesn't keep the length stable
+4. **Markdown Generation**: `render_post()` builds the post — one `## [title](url)` heading, a
+   one-line summary, and up to 3 short bullets per bookmark — and `write_post()` saves it to
+   `_posts/` (front matter always via `yaml.dump`)
 5. **Deployment**: GitHub Actions builds with Astro, runs the publishing gate, then deploys to GitHub Pages
+
+**Post length is a product decision**: the daily digest is meant to be skimmed in the morning, so
+the summary length limits live in the script (`SUMMARY_MAX_CHARS`, `POINT_MAX_CHARS`, `MAX_POINTS`)
+rather than only in the prompt. Adjust those constants to change how long the posts get.
+
+`python scripts/fetch_and_summarize.py --dry-run [--date YYYY-MM-DD]` prints the post instead of
+writing it — useful for checking the output length after a prompt change.
 
 ### Docker-based Development
 - **Containerized Environment**: The Astro dev server and the Python scripts run in separate containers
