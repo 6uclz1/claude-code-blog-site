@@ -1,0 +1,29 @@
+---
+// トップページ（index.astro）とページ送り（page[num].astro）で共通の一覧セクション。
+// 同じマークアップを2箇所に置くと片方だけ直して見た目がずれるため、ここにまとめる。
+import PostList from './PostList.astro';
+import Pagination from './Pagination.astro';
+import SiteNav from './SiteNav.astro';
+import type { Post } from '../lib/posts';
+import { SITE } from '../site';
+
+interface Props {
+  posts: Post[];
+  currentPage: number;
+  totalPages: number;
+  /** 見出し下の小さい行。省略時はサイトの説明 */
+  eyebrow?: string;
+}
+
+const { posts, currentPage, totalPages, eyebrow } = Astro.props;
+---
+
+<section class="page-section">
+  <div class="page-heading">
+    <h1>{SITE.title}</h1>
+    <p class="eyebrow">{eyebrow ?? SITE.description}</p>
+  </div>
+  <PostList posts={posts} />
+  <Pagination currentPage={currentPage} totalPages={totalPages} />
+  <SiteNav />
+</section>

@@ -532,7 +532,9 @@ def write_post(
 
     path = post_path(target_date, posts_dir)
     if path.exists():
-        logger.info("Post already exists, skipping: %s", path)
+        # run() でも先に検査しているので、ここに来るのは posts_dir を差し替えた
+        # 呼び出しだけ。上書きすると既存記事を失うため必ず残す。
+        logger.warning("Post already exists, keeping the existing file: %s", path)
         return False
 
     try:
@@ -573,7 +575,11 @@ def summarize_bookmarks(
     return digests
 
 
-def run(target_date: date | None = None, dry_run: bool = False) -> int:
+def run(
+    target_date: date | None = None,
+    dry_run: bool = False,
+    posts_dir: Path = POSTS_DIR,
+) -> int:
     """メイン処理。作成した記事数（0 or 1）を返す
 
     記事を作れない異常（設定不備・要約の全滅）は AbortRun を送出する。
@@ -596,10 +602,26 @@ def run(target_date: date | None = None, dry_run: bool = False) -> int:
         logger.info("No entries from %s found", target_date)
         return 0
 
-    digests = summarize_bookmarks(bookmarks, GeminiSummarizer(api_key))
-    if not digests:
-        logger.info("No valid entries to create blog posts")
+    # 既にその日の記事があるなら要約する必要はない（APIも呼ばない）。
+    # 再実行では正常な流れなので止めないが、無言だと「なぜ増えていないのか」が
+    # 分からないため警告として残す。
+    path = post_path(target_date, posts_dir)
+    if not dry_run and path.exists():
+        logger.warning(
+            "Post for %s already exists, nothing to do: %s", target_date, path
+        )
         return 0
+
+    digests = summarize_bookmarks(bookmarks, GeminiSummarizer(api_key))
+
+    # ブックマークはあったのに1件も処理できていない状態。記事が作られないまま
+    # ワークフローが成功扱いで終わると、穴が空いたことに誰も気づけないので止める。
+    if not digests:
+        raise AbortRun(
+            "%d件のブックマークすべてで本文を取得できず、記事を作成しません "
+            "(取得先の仕様変更・ネットワーク・r.jina.ai のレート制限を確認してください)"
+            % len(bookmarks)
+        )
 
     # 要約が1件も作れていない記事は中身が無いのと同じなので公開しない。
     # フロントマターもURLも正常なため公開前ゲート(validate_build.py)では検知できず、
@@ -614,7 +636,7 @@ def run(target_date: date | None = None, dry_run: bool = False) -> int:
         print(render_post(digests, target_date))
         return 0
 
-    return 1 if write_post(digests, target_date) else 0
+    return 1 if write_post(digests, target_date, posts_dir) else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:

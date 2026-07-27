@@ -1,15 +1,15 @@
 import type { APIRoute } from 'astro';
-import { getSortedPosts, permalinkToParam } from '../lib/posts';
+import { getSortedPosts, permalinkToParam, postUpdated } from '../lib/posts';
+import { escapeXml } from '../lib/xml';
 
-// 記事とトップページのサイトマップ。ページ送り(/pageN/)は同じ記事の一覧で
-// 中身が薄いため載せない（各ページには noindex を付けている）。
+// 記事・トップページ・一覧系ページのサイトマップ。ページ送り(/pageN/)は同じ記事の
+// 一覧で中身が薄いため載せない（各ページには noindex を付けている）。
 
-const escapeXml = (value: string) =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+/**
+ * 記事以外で載せるページ。最終更新は最新記事に合わせる（内容が記事に依存するため）。
+ * 検索ページ(/search/)は結果がJavaScript任せで中身が無く noindex なので載せない。
+ */
+const STATIC_PATHS = ['', 'archive/', 'sites/'];
 
 export const GET: APIRoute = async ({ site }) => {
   if (!site) throw new Error('astro.config.mjs の site が設定されていません');
@@ -19,12 +19,18 @@ export const GET: APIRoute = async ({ site }) => {
     site
   );
   const posts = await getSortedPosts();
+  const latest = posts.length
+    ? new Date(Math.max(...posts.map((post) => postUpdated(post).getTime())))
+    : undefined;
 
   const urls = [
-    { loc: baseUrl.href, lastmod: posts[0]?.data.date },
+    ...STATIC_PATHS.map((path) => ({
+      loc: new URL(path, baseUrl).href,
+      lastmod: latest,
+    })),
     ...posts.map((post) => ({
       loc: new URL(`${permalinkToParam(post.data.permalink)}/`, baseUrl).href,
-      lastmod: post.data.date,
+      lastmod: postUpdated(post),
     })),
   ];
 

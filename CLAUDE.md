@@ -30,16 +30,22 @@ npm run preview
 # Type check Astro/TypeScript files
 npm run check
 
+# Unit-test the pure helpers in src/lib (vitest)
+npm test
+
 # Build and validate before publishing (公開前ゲートと同じ検証)
 npm run build 2>&1 | tee build.log
-python scripts/validate_build.py --log build.log --feed dist/feed.xml
+python scripts/validate_build.py --log build.log --feed dist/feed.xml --dist dist
 ```
 
 **Publishing gate**: broken front matter fails the build via the content collection
 schema in `src/content.config.ts`, and duplicate permalinks throw explicitly in
 `src/pages/[...slug].astro`. On top of that, `scripts/validate_build.py` scans the
 build log and the generated `feed.xml` (empty titles, duplicate URLs, build-time
-timestamps) and blocks the deploy. The daily automation runs this gate *before*
+timestamps) and blocks the deploy. With `--dist dist` it also counts the generated
+`YYYY/MM/DD/slug/index.html` pages against `_posts/*.md` — `feed.xml` only carries the
+newest 20 entries, so anything older that stops being generated is invisible to the
+feed checks. The daily automation runs this gate *before*
 committing — nothing that fails validation is committed or published, and a failure
 opens an issue automatically.
 
@@ -100,23 +106,35 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
 ### Core Structure
 - **astro.config.mjs**: `site` + `base` (GitHub Pages baseurl `/claude-code-blog-site`),
   `trailingSlash: 'always'`, Shiki syntax highlighting
-- **package.json**: Node dependencies (astro, marked)
+- **package.json**: Node dependencies (astro, marked; pagefind and vitest for dev).
+  `npm run build` runs `astro build` and then `pagefind --site dist` to write the
+  search index into `dist/pagefind/` — `npm run dev` has no index, so `/search/` only
+  works against a real build
 - **Docker Environment**:
   - `Dockerfile`: Astro development environment
   - `Dockerfile.production`: Multi-stage build (Astro build → nginx)
   - `docker-compose.yml`: Development services (astro + python-scripts)
 - **Astro sources**:
   - `src/content.config.ts`: content collection reading `_posts/**/*.md`
-  - `src/site.ts`: site title / description / author / feed limit
-  - `src/lib/posts.ts`: sorting, permalink→URL, date formatting, excerpt rendering
+  - `src/site.ts`: site title / description / author / feed limit / OGP image
+  - `src/lib/posts.ts`: astro:content を読む側（sorting, URL, excerpt rendering）
+  - `src/lib/format.ts`: astro に依存しない整形（permalink→param, 日付, description）。
+    `posts.ts` から再エクスポートしているので import 元は変わらない
+  - `src/lib/bookmarks.ts`: 本文からブックマーク見出しを抽出（feed と `/sites/` が共用）
+  - `src/lib/feed.ts` / `src/lib/xml.ts`: フィードの summary 生成と XML エスケープ
+  - `src/lib/*.test.ts`: vitest（`npm test`）。astro を読まないモジュールだけが対象
   - `src/layouts/`: `BaseLayout.astro`, `PostLayout.astro`
-  - `src/components/`: `Header`, `Footer`, `PostList`, `Pagination`
+  - `src/components/`: `Header`, `Footer`, `PostList`, `Pagination`,
+    `PostIndexSection`（一覧の共通マークアップ）, `SiteNav`
   - `src/pages/`: `index.astro`, `page[num].astro`, `[...slug].astro`, `404.astro`,
-    `feed.xml.ts`, `sitemap.xml.ts`
+    `archive.astro`, `sites.astro`, `search.astro`, `feed.xml.ts`, `sitemap.xml.ts`
+  - `public/og.png`: 全ページ共通のOGP画像。`node scripts/generate_og_image.mjs` で再生成
   - `src/styles/global.css`: custom CSS (imported by `BaseLayout`)
   - `_posts/`: blog posts in Markdown with YAML front matter
 - **Automation Pipeline**:
   - `scripts/fetch_and_summarize.py`: Hatena bookmark summarization with Gemini AI
+  - `scripts/build_weekly_digest.py`: 日次記事7本を束ねる週刊まとめ（AIは呼ばない）
+  - `scripts/generate_og_image.mjs`: OGP画像の生成（手動実行、結果をコミットする）
   - `scripts/validate_build.py`: pre-publish gate over the build log and feed.xml
   - `tests/`: Unit tests with pytest and mocking for Gemini API
   - `test_runner.py`: Test execution script with coverage support
@@ -137,15 +155,27 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
   HTML readers and tag-stripping clients (Slack) both break lines. Posts without bookmark
   headings fall back to `excerpt`. Everything inside a `type="html"` element (titles and
   summaries alike) is escaped twice, so a title like `<Suspense>` is not swallowed as a tag
-- **SEO**: OGP / Twitter Card meta in `BaseLayout`, `sitemap.xml`, a `404.astro` page, and
+- **SEO**: OGP / Twitter Card meta in `BaseLayout` (with the shared `public/og.png`),
+  `BlogPosting` JSON-LD on article pages, `sitemap.xml`, a `404.astro` page, and
   `noindex, follow` + `rel=prev/next` on the paginated pages (`/page2/` and later)
+- **Post navigation**: article pages link to the next/previous post in the feed order
+  (computed in `[...slug].astro` from the sorted list), plus the back link to the index
+- **Search**: `/search/` is Pagefind. The index is built by `npm run build`'s second step
+  and only covers `data-pagefind-body` (the `<article>` in `PostLayout.astro`), so
+  listing pages never show up as results
+- **Archive / sites**: `/archive/` lists every post grouped by year — the only way to
+  reach old posts without clicking through 30+ pagination pages — and `/sites/` counts
+  the bookmarked hosts from the post bodies via `src/lib/bookmarks.ts`
 - **Responsive Design**: Mobile-first CSS with a breakpoint at 720px
 - **Japanese Localization**: Date formatting and UI text in Japanese
 - **Syntax Highlighting**: Shiki, at build time
-- **Automated Content**: Daily Hatena bookmark summarization using Gemini AI
+- **Automated Content**: Daily Hatena bookmark summarization using Gemini AI, plus a
+  weekly digest that reuses those summaries
 
 ### Content Management
-- Blog posts use YAML front matter with `title`, `date`, `permalink`, and `excerpt`
+- Blog posts use YAML front matter with `title`, `date`, `permalink`, and `excerpt`;
+  `updated` is optional and only needed when an already published post is edited
+  (it drives the feed's `<updated>` and the sitemap's `<lastmod>`)
 - The `permalink` front matter is the article URL; it follows `/:year/:month/:day/:title/`
   and must match the date in the filename (enforced by `tests/test_posts_integrity.py`)
 - Dates are rendered in UTC so the displayed date matches the permalink date
@@ -165,7 +195,9 @@ on `:root` (`--bg` / `--fg` / `--muted` / `--line` / `--panel`, plus the `--cont
 - **Texture**: a fixed, masked dot pattern (`body::before`) over a subtle radial gradient
 - **Components**: no cards or shadows. The index is a date + title row list
   (`.post-index` / `.post-row`), the article page is `.post-page` / `.post-body`, and the
-  header is a fixed brand at top-left with the footer at bottom-right
+  header is a fixed brand at top-left with the footer at bottom-right. Archive and
+  `/sites/` reuse the same row shape (`.archive-row` / `.host-row`), and the auxiliary
+  links live in `.site-nav` under the list rather than in the header
 - **Hover**: links share one effect — a gradient sweeping in from the left that inverts
   the text color (`--hover-shape` / `--hover-surface`); disabled under
   `prefers-reduced-motion`
@@ -195,14 +227,22 @@ between stages:
    application/json`, and `parse_digest()` normalizes/truncates it — prompt wording alone
    doesn't keep the length stable. A per-article failure falls back to `SUMMARY_FALLBACK`,
    but if *every* article ends up on the fallback, `run()` raises `AbortRun` and no post is
-   written: the front matter of such a post is valid, so the publishing gate cannot catch it
+   written: the front matter of such a post is valid, so the publishing gate cannot catch it.
+   `run()` also aborts when bookmarks were found but *none* of them yielded article text —
+   otherwise the workflow finishes green with no post and nobody notices the gap. When the
+   day's post already exists it returns early (before any API call) and says so at WARNING
 4. **Markdown Generation**: `render_post()` builds the post — one `## [title](url)` heading, a
    one-line summary, and up to 3 short bullets per bookmark — and `write_post()` saves it to
    `_posts/` (front matter always via `yaml.dump`). `title` / `date` / `permalink` are all
    derived from the bookmark date (`post_datetime()` pins the time to 09:00 JST = 00:00 UTC),
    never from the run time — otherwise a manual run outside the cron window shifts the
    displayed date, which is rendered in UTC, one day away from the permalink
-5. **Deployment**: `update-blog.yml` commits and pushes the post; the push triggers
+5. **Weekly digest**: `build_weekly_digest.py` (run by `weekly-digest.yml` every Monday
+   09:30 JST) reads the last 7 daily posts from `_posts/`, pulls the bookmark headings out
+   of them — both the current `## [title](url)` form and the legacy `## 1. title` +
+   `**URL:**` form that every existing post uses — and writes one look-back post. It never
+   calls Gemini: the summaries already exist in the daily posts
+6. **Deployment**: `update-blog.yml` commits and pushes the post; the push triggers
    `deploy.yml`, which builds with Astro, runs the publishing gate, and deploys to GitHub
    Pages. Only `deploy.yml` deploys — deploying from both races on the `github-pages`
    environment
@@ -217,11 +257,18 @@ writing it — useful for checking the output length after a prompt change.
 ### Docker-based Development
 - **Containerized Environment**: The Astro dev server and the Python scripts run in separate containers
 - **Development Workflow**: `docker compose up astro` provides a hot-reloading dev server at localhost:4000
-- **CI/CD Integration**: GitHub Actions builds the site with `actions/setup-node`; Docker is used for the Python scripts
+- **CI/CD Integration**: GitHub Actions builds the site with `actions/setup-node`; Docker is used for the Python scripts.
+  `test.yml` runs on pull requests only — a push to `main` already gets the same build and
+  publishing gate from `deploy.yml`, so keeping both would build every merge twice
+- **Node base image**: the Dockerfiles use `node:22-slim` rather than Alpine because the
+  Pagefind binary that `npm ci` fetches is built against glibc
 - **Testing Isolation**: Tests run in containerized environment with mocked external dependencies
 
 ### Testing Strategy
 - **Unit Tests**: Comprehensive pytest suite with 92% code coverage
+- **Frontend Tests**: `npm test` (vitest) covers `src/lib/*.test.ts`. Only modules that do
+  not import `astro:content` can be tested this way, which is why the pure helpers live in
+  `format.ts` / `bookmarks.ts` / `feed.ts` / `xml.ts` rather than in `posts.ts`
 - **Gemini API Mocking**: All external API calls are mocked to avoid API key dependencies.
   The one exception is `generation_config()`, which is built through the real SDK types so a
   setting the installed SDK no longer accepts fails the test instead of silently turning every

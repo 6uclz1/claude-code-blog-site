@@ -9,7 +9,10 @@ Astro で構築された日本語のブログサイトです。モダンなデ�
 - **ページネーション**: 1ページ10記事の設定
 - **シンタックスハイライト**: Shikiによるビルド時ハイライト
 - **Atomフィード**: `/feed.xml` を配信
-- **自動コンテンツ生成**: Gemini AIを使用したはてなブックマーク要約の自動生成
+- **全文検索**: Pagefind による静的サイト内検索（`/search/`）
+- **アーカイブ / 集計**: 年別アーカイブ（`/archive/`）とブックマーク先サイトの集計（`/sites/`）
+- **SEO**: OGP画像・JSON-LD（BlogPosting）・サイトマップ
+- **自動コンテンツ生成**: Gemini AIを使用したはてなブックマーク要約の自動生成と、週次のふりかえり記事
 - **Docker対応**: 開発環境とプロダクション環境の両方でDocker対応
 
 ## 📋 必要な環境
@@ -69,14 +72,26 @@ npm run preview
 
 # 型チェック
 npm run check
+
+# フロントエンド（src/lib）の単体テスト
+npm test
+
+# OGP画像を作り直す（public/og.png）
+npm run og
 ```
+
+`npm run build` は Astro のビルドに続けて Pagefind の索引作成（`dist/pagefind/`）まで行います。
+`npm run dev` では索引が無いため `/search/` は動きません（`npm run build && npm run preview` で確認できます）。
 
 ### 公開前の検証
 
 ```bash
 npm run build 2>&1 | tee build.log
-python scripts/validate_build.py --log build.log --feed dist/feed.xml
+python scripts/validate_build.py --log build.log --feed dist/feed.xml --dist dist
 ```
+
+`--dist` を渡すと、`_posts/` の記事がすべてページとして出力されているかも検査します
+（feed.xml は最新20件しか載らないため、それより古い記事の消失はこの検査で捕まえます）。
 
 ### Docker関連
 
@@ -106,6 +121,9 @@ python test_runner.py --coverage
 
 # 特定のテストを実行
 python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
+
+# フロントエンド（src/lib）のテスト
+npm test
 ```
 
 ## 🏗️ プロジェクト構造
@@ -117,16 +135,19 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
 ├── Dockerfile               # 開発環境
 ├── Dockerfile.production    # プロダクション環境
 ├── _posts/                  # ブログ記事（Markdown・コンテンツソース）
+├── public/og.png            # OGP画像（scripts/generate_og_image.mjs で生成）
 ├── src/
 │   ├── content.config.ts    # コンテンツコレクション定義
 │   ├── site.ts              # サイトのメタ情報
-│   ├── lib/posts.ts         # 記事の取得・整形ユーティリティ
+│   ├── lib/                 # 記事の取得・整形ユーティリティ（*.test.ts は vitest）
 │   ├── layouts/             # レイアウト
 │   ├── components/          # 再利用可能コンポーネント
-│   ├── pages/               # ルーティング（一覧・記事・feed.xml・sitemap.xml・404）
+│   ├── pages/               # ルーティング（一覧・記事・アーカイブ・検索・feed.xml など）
 │   └── styles/global.css    # カスタムCSS
 ├── scripts/                 # 自動化スクリプト
 │   ├── fetch_and_summarize.py
+│   ├── build_weekly_digest.py
+│   ├── generate_og_image.mjs
 │   └── validate_build.py
 ├── tests/                   # ユニットテスト
 ├── requirements.txt         # Python依存関係（本番）
@@ -144,6 +165,8 @@ title: "記事タイトル"
 date: 2024-01-01 12:00:00 +0900
 permalink: /2024/01/01/article-slug/
 excerpt: "記事の要約"
+# 公開後に直したときだけ。feed の <updated> と sitemap の <lastmod> に反映されます
+# updated: 2024-01-02 09:00:00 +0900
 ---
 
 記事の内容をここに記述...
@@ -172,9 +195,34 @@ python scripts/fetch_and_summarize.py --dry-run
 python scripts/fetch_and_summarize.py --date 2026-07-26 --dry-run
 ```
 
+ブックマークはあったのに本文が1件も取得できなかった場合と、要約が全滅した場合は、
+記事を作らずに終了コード1で終わります（無言で記事が欠けるのを防ぐため）。
+その日の記事が既にある場合は要約もせずに終了します。
+
 記事本文は通常HTMLを直接取得して抽出しますが、Twitter/X のようにJavaScriptで描画される
 サイトは本文が取れないため、[r.jina.ai](https://r.jina.ai/) 経由でレンダリング済みの
 テキストを取得します。他のサイトでも本文が取れなかった場合は r.jina.ai にフォールバックします。
+
+### 週刊まとめ
+
+`scripts/build_weekly_digest.py` は、日次のまとめ記事7日分から「週刊まとめ」を1本作ります。
+要約は日次記事のものを流用するため Gemini API は呼びません。
+
+```bash
+# 週の最終日を指定して出力を確認する（既定は日本時間の昨日）
+python scripts/build_weekly_digest.py --week-ending 2026-07-26 --dry-run
+```
+
+毎週月曜 9:30 JST に `weekly-digest.yml` が実行します。
+
+### 欠損日の埋め方
+
+自動更新が数日続けて失敗すると、はてなブックマークのRSSの取得範囲から外れて
+その日の記事を作れなくなります。日付を指定して手動で生成してください。
+
+```bash
+python scripts/fetch_and_summarize.py --date 2026-07-20
+```
 
 ### 環境変数
 

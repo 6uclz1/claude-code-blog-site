@@ -12,11 +12,15 @@ interface Props {
   ogType?: 'website' | 'article';
   /** 記事の公開日時（OGP の article:published_time） */
   publishedTime?: Date;
+  /** 記事の更新日時（OGP の article:modified_time） */
+  modifiedTime?: Date;
   /** 検索結果に出す必要がないページ（ページ送りの2ページ目以降など） */
   noindex?: boolean;
   /** ページ送りの前後（rel=prev/next） */
   prevUrl?: string;
   nextUrl?: string;
+  /** 構造化データ（JSON-LD）。記事ページの BlogPosting など */
+  jsonLd?: Record<string, unknown>;
 }
 
 const {
@@ -24,9 +28,11 @@ const {
   description,
   ogType = 'website',
   publishedTime,
+  modifiedTime,
   noindex = false,
   prevUrl,
   nextUrl,
+  jsonLd,
 } = Astro.props;
 
 const pageTitle = title ? `${title} | ${SITE.title}` : SITE.title;
@@ -34,6 +40,9 @@ const pageDescription = description ?? SITE.description;
 const feedUrl = withBase('/feed.xml');
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const absolute = (path: string) => new URL(path, Astro.site).href;
+// OGP画像は全ページ共通の1枚。scripts/generate_og_image.mjs で生成して
+// public/ に置いてあるので、ビルド時に画像を作る依存を増やさずに済む。
+const ogImage = absolute(withBase(SITE.ogImage));
 ---
 
 <!DOCTYPE html>
@@ -57,6 +66,10 @@ const absolute = (path: string) => new URL(path, Astro.site).href;
     <meta property="og:description" content={pageDescription} />
     <meta property="og:url" content={canonical} />
     <meta property="og:locale" content="ja_JP" />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={SITE.title} />
     {
       publishedTime && (
         <meta
@@ -65,9 +78,18 @@ const absolute = (path: string) => new URL(path, Astro.site).href;
         />
       )
     }
-    <meta name="twitter:card" content="summary" />
+    {
+      modifiedTime && (
+        <meta
+          property="article:modified_time"
+          content={modifiedTime.toISOString()}
+        />
+      )
+    }
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={pageTitle} />
     <meta name="twitter:description" content={pageDescription} />
+    <meta name="twitter:image" content={ogImage} />
 
     <link
       rel="alternate"
@@ -76,6 +98,15 @@ const absolute = (path: string) => new URL(path, Astro.site).href;
       href={feedUrl}
     />
     <meta name="generator" content={Astro.generator} />
+    {
+      jsonLd && (
+        <script
+          type="application/ld+json"
+          set:html={JSON.stringify(jsonLd)}
+          is:inline
+        />
+      )
+    }
   </head>
   <body>
     <Header />

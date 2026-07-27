@@ -1,0 +1,86 @@
+---
+// ブックマーク先サイトの集計。記事本文の `## [タイトル](URL)` から
+// ホスト名を数えて、よく読んでいるサイトが見えるようにする。
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteNav from '../components/SiteNav.astro';
+import { extractBookmarks, hostOf } from '../lib/bookmarks';
+import { getSortedPosts, withBase } from '../lib/posts';
+
+/** 一覧に出すホスト数の上限（1件だけのサイトまで並べると読み物にならない） */
+const TOP_HOSTS = 40;
+
+interface HostStat {
+  host: string;
+  count: number;
+  /** 直近のブックマーク（そのサイトで最後に読んだ記事へのリンク） */
+  latest: { title: string; url: string };
+}
+
+const posts = await getSortedPosts();
+
+const stats = new Map<string, HostStat>();
+let total = 0;
+
+// posts は新しい順。最初に見つかったものが最新のブックマークになる
+for (const post of posts) {
+  for (const bookmark of extractBookmarks(post.body ?? '')) {
+    if (!bookmark.url) continue;
+    const host = hostOf(bookmark.url);
+    if (!host) continue;
+
+    total += 1;
+    const found = stats.get(host);
+    if (found) {
+      found.count += 1;
+    } else {
+      stats.set(host, {
+        host,
+        count: 1,
+        latest: { title: bookmark.title, url: bookmark.url },
+      });
+    }
+  }
+}
+
+const ranked = [...stats.values()].sort(
+  (a, b) => b.count - a.count || a.host.localeCompare(b.host)
+);
+const shown = ranked.slice(0, TOP_HOSTS);
+const description = `これまでにブックマークした${total}件を、サイト別に集計しました。`;
+---
+
+<BaseLayout title="ブックマーク先" description={description}>
+  <section class="page-section">
+    <div class="page-heading">
+      <h1>ブックマーク先</h1>
+      <p class="eyebrow">
+        {stats.size} サイト / {total} 件（上位 {shown.length} サイトを表示）
+      </p>
+    </div>
+
+    <div class="host-list">
+      {
+        shown.map((stat) => (
+          <div class="host-row">
+            <span class="host-row__count">{stat.count}</span>
+            <div class="host-row__body">
+              <span class="host-row__name">{stat.host}</span>
+              <a
+                class="host-row__latest"
+                href={stat.latest.url}
+                rel="noopener noreferrer"
+              >
+                {stat.latest.title}
+              </a>
+            </div>
+          </div>
+        ))
+      }
+    </div>
+
+    <nav class="post-nav" aria-label="記事ナビゲーション">
+      <a class="post-nav__back" href={withBase('/')}>← 記事一覧へ</a>
+    </nav>
+    <SiteNav />
+  </section>
+</BaseLayout>

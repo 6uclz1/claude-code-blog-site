@@ -36,6 +36,9 @@ LOG_PATTERNS = [
 # 記事のURLは /YYYY/MM/DD/slug/ 形式
 POST_URL_RE = re.compile(r'/\d{4}/\d{2}/\d{2}/[^/]+/$')
 
+# dist の中の記事ページ: YYYY/MM/DD/slug/index.html
+POST_PAGE_RE = re.compile(r'^\d{4}/\d{2}/\d{2}/[^/]+/index\.html$')
+
 # フロントマターが壊れた記事はビルド時刻を持つため、同一秒のentryが束になって現れる。
 # 過去の記事が偶然同じ時刻を持っていても異常ではないので、
 # 「ビルド時刻に近い」ものだけを異常として扱う。
@@ -57,6 +60,47 @@ def check_log(path, errors):
         hits = pattern.findall(log)
         if hits:
             errors.append('ビルドログ: %s (%d件)' % (message, len(hits)))
+
+
+def _count_post_pages(dist_dir):
+    """dist に出力された記事ページ (YYYY/MM/DD/slug/index.html) の数"""
+    count = 0
+    for current, _dirs, files in os.walk(dist_dir):
+        for name in files:
+            if name != 'index.html':
+                continue
+            rel = os.path.relpath(os.path.join(current, name), dist_dir)
+            if POST_PAGE_RE.match(rel.replace(os.sep, '/')):
+                count += 1
+    return count
+
+
+def check_pages(dist_dir, posts_dir, errors):
+    """_posts の記事がすべてページとして出力されているかを検査する
+
+    feed.xml は最新20件しか載らないため、それより古い記事が消えても
+    feed の検査では気づけない。ここで件数を突き合わせる。
+    """
+    if not dist_dir:
+        return
+    if not os.path.isdir(dist_dir):
+        errors.append('ビルド結果が見つからない: %s' % dist_dir)
+        return
+    if not os.path.isdir(posts_dir):
+        errors.append('記事ディレクトリが見つからない: %s' % posts_dir)
+        return
+
+    sources = [
+        name for name in os.listdir(posts_dir)
+        if name.endswith('.md') and not name.startswith('.')
+    ]
+    generated = _count_post_pages(dist_dir)
+
+    # 1記事につき1ページ。少なければ記事が読み込まれずに落ちている
+    if generated < len(sources):
+        errors.append(
+            '記事の出力数が足りない: _posts %d件に対して %d ページ (%d件が公開されない)'
+            % (len(sources), generated, len(sources) - generated))
 
 
 def _text(entry, tag):
@@ -138,11 +182,14 @@ def main(argv=None):
     parser.add_argument('--log', help='Astroのビルドログ')
     parser.add_argument('--feed', default='dist/feed.xml', help='生成された feed.xml')
     parser.add_argument('--min-entries', type=int, default=1, help='feed.xml の最低entry数')
+    parser.add_argument('--dist', help='ビルド結果のディレクトリ（記事の出力数を検査する）')
+    parser.add_argument('--posts', default='_posts', help='記事のソースディレクトリ')
     args = parser.parse_args(argv)
 
     errors = []
     check_log(args.log, errors)
     check_feed(args.feed, errors, args.min_entries)
+    check_pages(args.dist, args.posts, errors)
 
     if errors:
         print('❌ 検証に失敗しました。サイトを公開しません:', file=sys.stderr)

@@ -1,20 +1,24 @@
 import type { APIRoute } from 'astro';
 import { feedSummaryLines } from '../lib/feed';
-import { getSortedPosts, permalinkToParam, type Post } from '../lib/posts';
+import {
+  getSortedPosts,
+  permalinkToParam,
+  postUpdated,
+  type Post,
+} from '../lib/posts';
+import { escapeHtmlText, escapeXml } from '../lib/xml';
 import { SITE } from '../site';
 
 // jekyll-feed と同じ Atom 形式で出力する。
 // 既存の購読者と公開前ゲート(scripts/validate_build.py)がこの形式を前提にしている。
 
-const escapeXml = (value: string) =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-
 const absoluteUrl = (site: URL, path: string) =>
   new URL(path.replace(/^\/+/, ''), site).href;
+
+// Slack などHTMLを落として表示するクライアントでも行が潰れないよう、
+// <br /> と実際の改行の両方を入れる。<br /> はタグとして効かせたいのでXMLのみエスケープ。
+const summaryHtml = (lines: string[]) =>
+  lines.map(escapeHtmlText).join('&lt;br /&gt;\n');
 
 export const GET: APIRoute = async ({ site }) => {
   if (!site) throw new Error('astro.config.mjs の site が設定されていません');
@@ -26,19 +30,13 @@ export const GET: APIRoute = async ({ site }) => {
   );
 
   const posts = (await getSortedPosts()).slice(0, SITE.feedPostsLimit);
+  // 記事を直したときに購読側が拾えるよう、フィード全体の updated は
+  // 掲載中の entry の updated の最大値にする（公開日順とは限らない）
   const updated = posts.length
-    ? posts[0]!.data.date.toISOString()
+    ? new Date(
+        Math.max(...posts.map((post) => postUpdated(post).getTime()))
+      ).toISOString()
     : new Date(0).toISOString();
-
-  // type="html" の要素の中身はHTMLなので、テキストはHTML用とXML用に二重にエスケープする。
-  // 1回だけだとリーダー側でXMLを解いた結果が `<Suspense>` のようなHTMLタグになり、
-  // その部分が表示から消えてしまう。
-  const escapeHtmlText = (value: string) => escapeXml(escapeXml(value));
-
-  // Slack などHTMLを落として表示するクライアントでも行が潰れないよう、
-  // <br /> と実際の改行の両方を入れる。<br /> はタグとして効かせたいのでXMLのみエスケープ。
-  const summaryHtml = (lines: string[]) =>
-    lines.map(escapeHtmlText).join('&lt;br /&gt;\n');
 
   const entry = (post: Post) => {
     const url = absoluteUrl(baseUrl, `${permalinkToParam(post.data.permalink)}/`);
@@ -48,7 +46,7 @@ export const GET: APIRoute = async ({ site }) => {
     <title type="html">${escapeHtmlText(post.data.title)}</title>
     <link href="${escapeXml(url)}" rel="alternate" type="text/html" title="${escapeXml(post.data.title)}"/>
     <published>${published}</published>
-    <updated>${published}</updated>
+    <updated>${postUpdated(post).toISOString()}</updated>
     <id>${escapeXml(url)}</id>
     <author><name>${escapeXml(SITE.author)}</name></author>${
       summary.length

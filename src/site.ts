@@ -7,4 +7,9 @@ export const SITE = {
   lang: 'ja',
   /** feed.xml に載せる記事数（jekyll-feed の posts_limit 相当） */
   feedPostsLimit: 20,
+  /**
+   * SNS共有用のOGP画像（public/ からのパス）。
+   * `node scripts/generate_og_image.mjs` で作り直せる。
+   */
+  ogImage: '/og.png',
 } as const;

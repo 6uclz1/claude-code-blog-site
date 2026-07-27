@@ -2,10 +2,8 @@
 // Jekyll の paginate_path: "/page:num/" を再現する（2ページ目以降。1ページ目は "/"）
 import type { GetStaticPaths } from 'astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import PostList from '../components/PostList.astro';
-import Pagination from '../components/Pagination.astro';
+import PostIndexSection from '../components/PostIndexSection.astro';
 import { getSortedPosts, PAGE_SIZE, pagePath, type Post } from '../lib/posts';
-import { SITE } from '../site';
 
 export const getStaticPaths: GetStaticPaths = async () => {
   const posts = await getSortedPosts();
@@ -39,12 +37,10 @@ const { posts, currentPage, totalPages } = Astro.props;
   nextUrl={currentPage < totalPages ? pagePath(currentPage + 1) : undefined}
   noindex
 >
-  <section class="page-section">
-    <div class="page-heading">
-      <h1>{SITE.title}</h1>
-      <p class="eyebrow">{currentPage} / {totalPages} ページ</p>
-    </div>
-    <PostList posts={posts} />
-    <Pagination currentPage={currentPage} totalPages={totalPages} />
-  </section>
+  <PostIndexSection
+    posts={posts}
+    currentPage={currentPage}
+    totalPages={totalPages}
+    eyebrow={`${currentPage} / ${totalPages} ページ`}
+  />
 </BaseLayout>
