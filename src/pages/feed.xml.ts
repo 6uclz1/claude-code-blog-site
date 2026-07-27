@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { feedSummaryLines } from '../lib/feed';
 import { getSortedPosts, permalinkToParam, type Post } from '../lib/posts';
 import { SITE } from '../site';
 
@@ -29,9 +30,17 @@ export const GET: APIRoute = async ({ site }) => {
     ? posts[0]!.data.date.toISOString()
     : new Date(0).toISOString();
 
+  // Slack などHTMLを落として表示するクライアントでも行が潰れないよう、
+  // <br /> と実際の改行の両方を入れる。
+  // type="html" の中身はHTMLなので、タイトルはHTML用とXML用に二重にエスケープし
+  // （`<Suspense>` のような文字列がタグとして消えないようにする）、<br /> はXMLのみ。
+  const summaryHtml = (lines: string[]) =>
+    lines.map((line) => escapeXml(escapeXml(line))).join('&lt;br /&gt;\n');
+
   const entry = (post: Post) => {
     const url = absoluteUrl(baseUrl, `${permalinkToParam(post.data.permalink)}/`);
     const published = post.data.date.toISOString();
+    const summary = feedSummaryLines(post.body ?? '', post.data.excerpt);
     return `  <entry>
     <title type="html">${escapeXml(post.data.title)}</title>
     <link href="${escapeXml(url)}" rel="alternate" type="text/html" title="${escapeXml(post.data.title)}"/>
@@ -39,8 +48,8 @@ export const GET: APIRoute = async ({ site }) => {
     <updated>${published}</updated>
     <id>${escapeXml(url)}</id>
     <author><name>${escapeXml(SITE.author)}</name></author>${
-      post.data.excerpt
-        ? `\n    <summary type="html">${escapeXml(post.data.excerpt)}</summary>`
+      summary.length
+        ? `\n    <summary type="html">${summaryHtml(summary)}</summary>`
         : ''
     }
   </entry>`;

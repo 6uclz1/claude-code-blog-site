@@ -124,7 +124,14 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
 - **Pagination**: 10 posts per page with Japanese navigation ("前へ"/"次へ"); page 1 is
   `/`, later pages are `/page2/`, `/page3/`, … (the Jekyll `paginate_path` is preserved)
 - **Atom feed**: `src/pages/feed.xml.ts` emits `/feed.xml` in the same Atom format
-  jekyll-feed produced, so existing subscribers and the publishing gate keep working
+  jekyll-feed produced, so existing subscribers and the publishing gate keep working.
+  Each entry's `<summary>` is built by `src/lib/feed.ts` from the bookmark headings in the
+  post body — a `・`-prefixed title list, nothing else. Slack's RSS integration shows only
+  the head of the summary, so any preamble would push the list out of the preview; the list
+  is capped by `FEED_SUMMARY_MAX_CHARS` / `FEED_SUMMARY_TITLE_MAX_CHARS` and the overflow
+  collapses into `ほかN件`. Lines are separated by both `<br />` and a real newline so
+  HTML readers and tag-stripping clients (Slack) both break lines. Posts without bookmark
+  headings fall back to `excerpt`
 - **Responsive Design**: Mobile-first CSS with a breakpoint at 720px
 - **Japanese Localization**: Date formatting and UI text in Japanese
 - **Syntax Highlighting**: Shiki, at build time
