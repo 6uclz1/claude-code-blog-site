@@ -44,7 +44,7 @@ jobs:
           # push / workflow_dispatch では空になり、既定のrefが使われる
           ref: ${{ inputs.ref }}
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Setup Node

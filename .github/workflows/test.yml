@@ -19,7 +19,7 @@ jobs:
       # python-scripts サービスは image 指定だけでビルド対象を持たないため、
       # Docker を挟まずランナー上で直接実行する（依存のキャッシュも効く）
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: pip
