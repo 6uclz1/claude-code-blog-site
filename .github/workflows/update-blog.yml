@@ -26,20 +26,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # python-scripts サービスは image 指定だけでビルド対象を持たないため、
-      # Docker を挟まずランナー上で直接実行する（依存のキャッシュも効く）
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
-
-      - name: Install Python dependencies
-        run: pip install -r requirements-dev.txt
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -54,7 +40,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # 任意。未設定でも r.jina.ai は匿名で利用できる
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
-        run: python scripts/fetch_and_summarize.py
+        run: npm run summarize
 
       - name: Check for changes
         id: verify-changed-files
@@ -68,7 +54,7 @@ jobs:
       # ここから公開前ゲート: 検証を通らなかったものはコミットしない
       - name: Run tests
         if: steps.verify-changed-files.outputs.changed == 'true'
-        run: python test_runner.py
+        run: npm test
 
       - name: Build Astro site
         if: steps.verify-changed-files.outputs.changed == 'true'
@@ -81,7 +67,7 @@ jobs:
       - name: Validate build output
         if: steps.verify-changed-files.outputs.changed == 'true'
         run: |
-          python scripts/validate_build.py --log build.log --feed dist/feed.xml \
+          npm run validate -- --log build.log --feed dist/feed.xml \
             --dist dist --min-entries 1
 
       - name: Upload build output on failure

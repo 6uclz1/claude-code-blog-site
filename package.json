@@ -11,16 +11,28 @@
     "check": "astro check",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "og": "node scripts/generate_og_image.mjs",
-    "astro": "astro"
+    "astro": "astro",
+    "summarize": "tsx scripts/fetch-and-summarize.ts",
+    "weekly-digest": "tsx scripts/build-weekly-digest.ts",
+    "validate": "tsx scripts/validate-build.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.13.0",
     "astro": "^7.1.4",
+    "cheerio": "^1.2.0",
+    "fast-xml-parser": "^5.10.1",
+    "fast-xml-validator": "^1.4.0",
+    "js-yaml": "^4.3.0",
     "marked": "^18.0.7"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "@types/js-yaml": "^4.0.9",
+    "@vitest/coverage-v8": "^3.2.7",
     "pagefind": "^1.4.0",
+    "tsx": "^4.23.1",
     "typescript": "^6.0.3",
     "vitest": "^3.2.4"
   }

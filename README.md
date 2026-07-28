@@ -17,9 +17,8 @@ Astro で構築された日本語のブログサイトです。モダンなデ�
 
 ## 📋 必要な環境
 
-- Node.js 22以上
+- Node.js 22以上（自動化スクリプトも TypeScript なので Node だけで動きます）
 - Docker & Docker Compose（推奨）
-- Python 3.11（自動化スクリプト用。CI もこのバージョンで動かしています）
 
 ## 🛠️ 環境構築
 
@@ -48,13 +47,10 @@ npm ci
 
 # 開発サーバーを起動（http://localhost:4000/claude-code-blog-site/）
 npm run dev
-
-# Python依存関係をインストール（自動化スクリプト用）
-pip install -r requirements.txt
-
-# テストも動かす場合
-pip install -r requirements-dev.txt
 ```
+
+自動化スクリプト（`scripts/*.ts`）も同じ `npm ci` で動きます。実行は
+[tsx](https://tsx.is/) 経由なので、ビルドやトランスパイルの手順はありません。
 
 ## 🖥️ 開発コマンド
 
@@ -73,7 +69,7 @@ npm run preview
 # 型チェック
 npm run check
 
-# フロントエンド（src/lib）の単体テスト
+# 単体テスト（src/lib と scripts/ の両方）
 npm test
 
 # OGP画像を作り直す（public/og.png）
@@ -87,7 +83,7 @@ npm run og
 
 ```bash
 npm run build 2>&1 | tee build.log
-python scripts/validate_build.py --log build.log --feed dist/feed.xml --dist dist
+npm run validate -- --log build.log --feed dist/feed.xml --dist dist
 ```
 
 `--dist` を渡すと、`_posts/` の記事がすべてページとして出力されているかも検査します
@@ -99,31 +95,25 @@ python scripts/validate_build.py --log build.log --feed dist/feed.xml --dist dis
 # 開発サーバー起動
 docker compose up astro
 
-# Pythonスクリプト実行
-docker compose run --rm python-scripts sh -c "
-  pip install -r requirements.txt &&
-  python scripts/fetch_and_summarize.py
-"
+# 自動化スクリプト実行
+docker compose run --rm scripts npm run summarize
 ```
 
 ### テスト実行
 
 ```bash
-# 全テストをカバレッジ付きで実行（Docker）
-docker compose run --rm python-scripts sh -c "
-  pip install -r requirements-dev.txt &&
-  python test_runner.py --coverage
-"
-
-# テストを直接実行
-python test_runner.py
-python test_runner.py --coverage
-
-# 特定のテストを実行
-python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
-
-# フロントエンド（src/lib）のテスト
+# 全テストを実行
 npm test
+
+# カバレッジ付き
+npm run test:coverage
+
+# ファイル単位・テスト名で絞り込む
+npx vitest run tests/fetch-and-summarize.test.ts
+npx vitest run -t 'r.jina.ai'
+
+# Docker で実行
+docker compose run --rm scripts npm test
 ```
 
 ## 🏗️ プロジェクト構造
@@ -144,14 +134,13 @@ npm test
 │   ├── components/          # 再利用可能コンポーネント
 │   ├── pages/               # ルーティング（一覧・記事・アーカイブ・検索・feed.xml など）
 │   └── styles/global.css    # カスタムCSS
-├── scripts/                 # 自動化スクリプト
-│   ├── fetch_and_summarize.py
-│   ├── build_weekly_digest.py
+├── scripts/                 # 自動化スクリプト（TypeScript / tsx で実行）
+│   ├── fetch-and-summarize.ts
+│   ├── build-weekly-digest.ts
+│   ├── validate-build.ts
 │   ├── generate_og_image.mjs
-│   └── validate_build.py
-├── tests/                   # ユニットテスト
-├── requirements.txt         # Python依存関係（本番）
-├── requirements-dev.txt     # Python依存関係（テスト）
+│   └── lib/                 # RSS・本文抽出・日付・front matter などの共通部品
+├── tests/                   # scripts/ のユニットテスト（vitest）
 └── .github/workflows/       # CI/CD設定
 ```
 
@@ -178,11 +167,11 @@ excerpt: "記事の要約"
 
 ### はてなブックマーク要約
 
-`scripts/fetch_and_summarize.py` スクリプトは以下の機能を提供します：
+`scripts/fetch-and-summarize.ts` スクリプトは以下の機能を提供します：
 
 1. **RSS処理**: はてなブックマークのRSSフィードを取得し、前日分だけを抽出
-2. **コンテンツ抽出**: BeautifulSoupを使用した記事内容の抽出
-3. **AI要約**: Gemini API（google-genai）でJSON（`summary` / `points`）を生成。
+2. **コンテンツ抽出**: cheerio を使用した記事内容の抽出
+3. **AI要約**: Gemini API（`@google/genai`）でJSON（`summary` / `points`）を生成。
    全件の要約に失敗した場合は記事を作らずに終了コード1で終わります
 4. **Markdown生成**: 1件あたり「1行サマリ + 箇条書き最大3点」で `_posts/` に記事を生成
 
@@ -191,8 +180,8 @@ excerpt: "記事の要約"
 
 ```bash
 # ファイルを書かずに出力を確認する（対象日の指定も可能）
-python scripts/fetch_and_summarize.py --dry-run
-python scripts/fetch_and_summarize.py --date 2026-07-26 --dry-run
+npm run summarize -- --dry-run
+npm run summarize -- --date 2026-07-26 --dry-run
 ```
 
 ブックマークはあったのに本文が1件も取得できなかった場合と、要約が全滅した場合は、
@@ -205,12 +194,12 @@ python scripts/fetch_and_summarize.py --date 2026-07-26 --dry-run
 
 ### 週刊まとめ
 
-`scripts/build_weekly_digest.py` は、日次のまとめ記事7日分から「週刊まとめ」を1本作ります。
+`scripts/build-weekly-digest.ts` は、日次のまとめ記事7日分から「週刊まとめ」を1本作ります。
 要約は日次記事のものを流用するため Gemini API は呼びません。
 
 ```bash
 # 週の最終日を指定して出力を確認する（既定は日本時間の昨日）
-python scripts/build_weekly_digest.py --week-ending 2026-07-26 --dry-run
+npm run weekly-digest -- --week-ending 2026-07-26 --dry-run
 ```
 
 毎週月曜 9:30 JST に `weekly-digest.yml` が実行します。
@@ -221,7 +210,7 @@ python scripts/build_weekly_digest.py --week-ending 2026-07-26 --dry-run
 その日の記事を作れなくなります。日付を指定して手動で生成してください。
 
 ```bash
-python scripts/fetch_and_summarize.py --date 2026-07-20
+npm run summarize -- --date 2026-07-20
 ```
 
 ### 環境変数
@@ -240,7 +229,7 @@ GitHub Pagesを使用した自動デプロイが設定されています：
 
 1. `main` ブランチへのプッシュ
 2. GitHub ActionsでAstroビルド実行
-3. `scripts/validate_build.py` による公開前検証
+3. `scripts/validate-build.ts` による公開前検証
 4. GitHub Pagesへの自動デプロイ
 
 自動更新ワークフロー（`update-blog.yml` / `weekly-digest.yml`）は記事をコミットして push した

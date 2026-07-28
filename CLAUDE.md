@@ -30,17 +30,17 @@ npm run preview
 # Type check Astro/TypeScript files
 npm run check
 
-# Unit-test the pure helpers in src/lib (vitest)
+# Unit-test src/lib and the automation scripts (vitest)
 npm test
 
 # Build and validate before publishing (公開前ゲートと同じ検証)
 npm run build 2>&1 | tee build.log
-python scripts/validate_build.py --log build.log --feed dist/feed.xml --dist dist
+npm run validate -- --log build.log --feed dist/feed.xml --dist dist
 ```
 
 **Publishing gate**: broken front matter fails the build via the content collection
 schema in `src/content.config.ts`, and duplicate permalinks throw explicitly in
-`src/pages/[...slug].astro`. On top of that, `scripts/validate_build.py` scans the
+`src/pages/[...slug].astro`. On top of that, `scripts/validate-build.ts` scans the
 build log and the generated `feed.xml` (empty titles, duplicate URLs, build-time
 timestamps) and blocks the deploy. With `--dist dist` it also counts the generated
 `YYYY/MM/DD/slug/index.html` pages against `_posts/*.md` — `feed.xml` only carries the
@@ -60,11 +60,8 @@ docker compose up -d astro
 # Stop services
 docker compose down
 
-# Run Python scripts with Docker
-docker compose run --rm python-scripts sh -c "
-  pip install -r requirements.txt &&
-  python scripts/fetch_and_summarize.py
-"
+# Run the automation scripts with Docker
+docker compose run --rm scripts npm run summarize
 ```
 
 ### Direct Development (Alternative)
@@ -75,30 +72,25 @@ npm ci
 # Start the dev server
 npm run dev
 
-# Install Python dependencies for automation scripts
-pip install -r requirements.txt
-# Test dependencies (includes requirements.txt)
-pip install -r requirements-dev.txt
-
 # Run Hatena bookmark summarization script manually
-python scripts/fetch_and_summarize.py
+# (the automation scripts are TypeScript, run through tsx — no build step)
+npm run summarize
 ```
 
 ### Testing
 ```bash
-# Run all tests with coverage (Docker)
-docker compose run --rm python-scripts sh -c "
-  pip install -r requirements-dev.txt &&
-  python test_runner.py --coverage
-"
+# Run all tests
+npm test
 
-# Run tests directly
-python test_runner.py
-python test_runner.py --coverage
-python test_runner.py --unittest
+# With coverage
+npm run test:coverage
 
-# Run specific test
-python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
+# Run a single file / a single test name
+npx vitest run tests/fetch-and-summarize.test.ts
+npx vitest run -t 'r.jina.ai'
+
+# Run tests with Docker
+docker compose run --rm scripts npm test
 ```
 
 ## Site Architecture
@@ -106,14 +98,18 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
 ### Core Structure
 - **astro.config.mjs**: `site` + `base` (GitHub Pages baseurl `/claude-code-blog-site`),
   `trailingSlash: 'always'`, Shiki syntax highlighting
-- **package.json**: Node dependencies (astro, marked; pagefind and vitest for dev).
+- **package.json**: Node dependencies (astro, marked, and the automation stack —
+  `@google/genai`, cheerio, fast-xml-parser, fast-xml-validator, js-yaml; pagefind,
+  tsx and vitest for dev).
+  `npm run summarize` / `npm run weekly-digest` / `npm run validate` run the scripts
+  in `scripts/` through tsx (arguments go after `--`, e.g. `npm run summarize -- --dry-run`).
   `npm run build` runs `astro build` and then `pagefind --site dist` to write the
   search index into `dist/pagefind/` — `npm run dev` has no index, so `/search/` only
   works against a real build
 - **Docker Environment**:
   - `Dockerfile`: Astro development environment
   - `Dockerfile.production`: Multi-stage build (Astro build → nginx)
-  - `docker-compose.yml`: Development services (astro + python-scripts)
+  - `docker-compose.yml`: Development services (astro + scripts)
 - **Astro sources**:
   - `src/content.config.ts`: content collection reading `_posts/**/*.md`
   - `src/site.ts`: site title / description / author / feed limit / OGP image
@@ -131,15 +127,16 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
   - `public/og.png`: 全ページ共通のOGP画像。`node scripts/generate_og_image.mjs` で再生成
   - `src/styles/global.css`: custom CSS (imported by `BaseLayout`)
   - `_posts/`: blog posts in Markdown with YAML front matter
-- **Automation Pipeline**:
-  - `scripts/fetch_and_summarize.py`: Hatena bookmark summarization with Gemini AI
-  - `scripts/build_weekly_digest.py`: 日次記事7本を束ねる週刊まとめ（AIは呼ばない）
+- **Automation Pipeline** (TypeScript, executed with tsx — there is no build step):
+  - `scripts/fetch-and-summarize.ts`: Hatena bookmark summarization with Gemini AI
+  - `scripts/build-weekly-digest.ts`: 日次記事7本を束ねる週刊まとめ（AIは呼ばない）
   - `scripts/generate_og_image.mjs`: OGP画像の生成（手動実行、結果をコミットする）
-  - `scripts/validate_build.py`: pre-publish gate over the build log and feed.xml
-  - `tests/`: Unit tests with pytest and mocking for Gemini API
-  - `test_runner.py`: Test execution script with coverage support
-  - `requirements.txt`: Python dependencies (production)
-  - `requirements-dev.txt`: test dependencies (includes `requirements.txt`)
+  - `scripts/validate-build.ts`: pre-publish gate over the build log and feed.xml
+  - `scripts/lib/`: 共通部品。`date.ts`（JST固定オフセットの暦日）, `frontmatter.ts`
+    （front matter の生成／分割。Astro と同じ js-yaml を使う）, `http.ts`（タイムアウト付き
+    取得と charset 判定）, `rss.ts`（RSS 1.0/2.0・Atom を同じ形に正規化）,
+    `article.ts`（cheerio による本文抽出）, `xml-node.ts`, `fs.ts`, `logger.ts`
+  - `tests/`: vitest tests for the scripts (Gemini SDK と fetch はモックする)
 - **CI/CD**: `.github/workflows/` for automated deployment and content updates
 
 ### Key Features
@@ -177,7 +174,7 @@ python -m pytest tests/test_fetch_and_summarize.py::TestClass::test_method -v
   `updated` is optional and only needed when an already published post is edited
   (it drives the feed's `<updated>` and the sitemap's `<lastmod>`)
 - The `permalink` front matter is the article URL; it follows `/:year/:month/:day/:title/`
-  and must match the date in the filename (enforced by `tests/test_posts_integrity.py`)
+  and must match the date in the filename (enforced by `tests/posts-integrity.test.ts`)
 - Dates are rendered in UTC so the displayed date matches the permalink date
 - Posts are plain Markdown (not MDX), so `{{ }}` and `{% %}` need no escaping
 - Japanese content with proper typography and line-height optimization
@@ -206,38 +203,44 @@ on `:root` (`--bg` / `--fg` / `--muted` / `--line` / `--panel`, plus the `--cont
 ## Automation Architecture
 
 ### Content Generation Pipeline
-`fetch_and_summarize.py` is a set of small module-level functions (plus a `GeminiSummarizer`
-class) wired together by `run()`, with `Bookmark` / `Digest` dataclasses as the data passed
-between stages:
+`fetch-and-summarize.ts` is a set of small module-level functions (plus a `GeminiSummarizer`
+class) wired together by `run()`, with `Bookmark` / `Digest` as the data passed between
+stages. `run()` takes its collaborators through an optional `deps` object (and the fetchers
+take injectable `direct` / `viaJina`) — ESM の export は差し替えられないため、テストは
+モンキーパッチではなくこの注入点を使う:
 
-1. **RSS Processing**: `fetch_entries()` + `select_bookmarks()` — collects every date an entry
-   carries (dc_date, entry-id URL pattern, published_parsed) and keeps the ones matching the
-   target day, de-duplicating by URL
-2. **Content Extraction**: `fetch_article_text()` picks between two fetchers and returns `None`
-   when neither yields text (the entry is then skipped):
-   - `fetch_article_text_direct()` scrapes the HTML with BeautifulSoup using fallback selectors
-   - `fetch_article_text_via_jina()` fetches `https://r.jina.ai/<url>` for rendered text
+1. **RSS Processing**: `fetchEntries()` + `selectBookmarks()` — the feed is fetched with a
+   timeout and parsed by `scripts/lib/rss.ts` (fast-xml-parser), then every date an entry
+   carries (`dc:date`, entry-id URL pattern, `pubDate`/`published`) is collected and the ones
+   matching the target day are kept, de-duplicating by URL
+2. **Content Extraction**: `fetchArticleText()` picks between two fetchers and returns
+   `undefined` when neither yields text (the entry is then skipped):
+   - `fetchArticleTextDirect()` scrapes the HTML with cheerio using fallback selectors
+     (`scripts/lib/article.ts`). `Response.text()` は常に UTF-8 として読むため、
+     charset の判定は `scripts/lib/http.ts` の `decodeBody()` で行う
+   - `fetchArticleTextViaJina()` fetches `https://r.jina.ai/<url>` for rendered text
 
    Twitter/X (`JINA_FIRST_HOSTS`) is JavaScript-rendered and shows a login wall, so direct
    scraping returns nothing usable — those hosts go through r.jina.ai first and fall back to
    direct. Every other host is scraped directly first and falls back to r.jina.ai when the
    result is missing or shorter than `MIN_ARTICLE_TEXT_CHARS` (cookie banners, login prompts).
-3. **AI Summarization**: `GeminiSummarizer.summarize()` asks Gemini (via the `google-genai`
-   SDK) for JSON (`{"summary": ..., "points": [...]}`) using `response_mime_type:
-   application/json`, and `parse_digest()` normalizes/truncates it — prompt wording alone
+3. **AI Summarization**: `GeminiSummarizer.summarize()` asks Gemini (via the `@google/genai`
+   SDK) for JSON (`{"summary": ..., "points": [...]}`) using `responseMimeType:
+   application/json`, and `parseDigest()` normalizes/truncates it — prompt wording alone
    doesn't keep the length stable. A per-article failure falls back to `SUMMARY_FALLBACK`,
    but if *every* article ends up on the fallback, `run()` raises `AbortRun` and no post is
    written: the front matter of such a post is valid, so the publishing gate cannot catch it.
    `run()` also aborts when bookmarks were found but *none* of them yielded article text —
    otherwise the workflow finishes green with no post and nobody notices the gap. When the
    day's post already exists it returns early (before any API call) and says so at WARNING
-4. **Markdown Generation**: `render_post()` builds the post — one `## [title](url)` heading, a
-   one-line summary, and up to 3 short bullets per bookmark — and `write_post()` saves it to
-   `_posts/` (front matter always via `yaml.dump`). `title` / `date` / `permalink` are all
-   derived from the bookmark date (`post_datetime()` pins the time to 09:00 JST = 00:00 UTC),
+4. **Markdown Generation**: `renderPost()` builds the post — one `## [title](url)` heading, a
+   one-line summary, and up to 3 short bullets per bookmark — and `writePost()` saves it to
+   `_posts/` (front matter always via `buildFrontMatter()` / js-yaml). `title` / `date` /
+   `permalink` are all derived from the bookmark date (`postDateStamp()` pins the time to
+   09:00 JST = 00:00 UTC),
    never from the run time — otherwise a manual run outside the cron window shifts the
    displayed date, which is rendered in UTC, one day away from the permalink
-5. **Weekly digest**: `build_weekly_digest.py` (run by `weekly-digest.yml` every Monday
+5. **Weekly digest**: `build-weekly-digest.ts` (run by `weekly-digest.yml` every Monday
    09:30 JST) reads the last 7 daily posts from `_posts/`, pulls the bookmark headings out
    of them — both the current `## [title](url)` form and the legacy `## 1. title` +
    `**URL:**` form that every existing post uses — and writes one look-back post. It never
@@ -256,13 +259,14 @@ between stages:
 the summary length limits live in the script (`SUMMARY_MAX_CHARS`, `POINT_MAX_CHARS`, `MAX_POINTS`)
 rather than only in the prompt. Adjust those constants to change how long the posts get.
 
-`python scripts/fetch_and_summarize.py --dry-run [--date YYYY-MM-DD]` prints the post instead of
+`npm run summarize -- --dry-run [--date YYYY-MM-DD]` prints the post instead of
 writing it — useful for checking the output length after a prompt change.
 
 ### Docker-based Development
-- **Containerized Environment**: The Astro dev server and the Python scripts run in separate containers
+- **Containerized Environment**: The Astro dev server and the automation scripts run in separate containers
 - **Development Workflow**: `docker compose up astro` provides a hot-reloading dev server at localhost:4000
-- **CI/CD Integration**: GitHub Actions builds the site with `actions/setup-node`; Docker is used for the Python scripts.
+- **CI/CD Integration**: GitHub Actions builds the site with `actions/setup-node`; the same
+  Node setup runs the automation scripts, so no Python toolchain is installed in CI.
   `test.yml` runs on pull requests only — a push to `main` already gets the same build and
   publishing gate from `deploy.yml`, so keeping both would build every merge twice
 - **Node base image**: the Dockerfiles use `node:22-slim` rather than Alpine because the
@@ -270,13 +274,18 @@ writing it — useful for checking the output length after a prompt change.
 - **Testing Isolation**: Tests run in containerized environment with mocked external dependencies
 
 ### Testing Strategy
-- **Unit Tests**: Comprehensive pytest suite with 92% code coverage
-- **Frontend Tests**: `npm test` (vitest) covers `src/lib/*.test.ts`. Only modules that do
-  not import `astro:content` can be tested this way, which is why the pure helpers live in
-  `format.ts` / `bookmarks.ts` / `feed.ts` / `xml.ts` rather than in `posts.ts`
+- **One test runner**: `npm test` (vitest) covers both `src/lib/*.test.ts` and `tests/*.test.ts`
+  (the automation scripts). `npm run test:coverage` adds the coverage report
+- **Frontend Tests**: only modules that do not import `astro:content` can be tested this way,
+  which is why the pure helpers live in `format.ts` / `bookmarks.ts` / `feed.ts` / `xml.ts`
+  rather than in `posts.ts`
+- **Dependency injection instead of monkeypatching**: ESM exports cannot be replaced at
+  runtime, so anything a test needs to control is a parameter — `run({ deps })`,
+  `fetchArticleText(url, { direct, viaJina })`, `new GeminiSummarizer(key, { client })`.
+  Network-level tests stub `fetch` with `vi.stubGlobal`
 - **Gemini API Mocking**: All external API calls are mocked to avoid API key dependencies.
-  The one exception is `generation_config()`, which is built through the real SDK types so a
-  setting the installed SDK no longer accepts fails the test instead of silently turning every
+  `generationConfig()` returns the SDK's own `GenerateContentConfig` type, so a setting the
+  installed SDK no longer accepts fails `npm run check` instead of silently turning every
   summary into the fallback string at runtime
 - **Error Scenarios**: Tests cover RSS failures, content extraction errors, and API timeout scenarios
 - **File Operations**: Tests verify Markdown file creation and content formatting

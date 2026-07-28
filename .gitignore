@@ -3,9 +3,7 @@ dist/
 .astro/
 
 # Test generated files
-.pytest_cache/
-htmlcov/
-.coverage
+coverage/
 
 # Docker generated files
 docker-compose.override.yml
@@ -29,16 +27,6 @@ Thumbs.db
 
 # Logs
 *.log
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
 
 # Node modules (if using npm/yarn)
 node_modules/

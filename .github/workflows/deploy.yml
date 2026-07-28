@@ -43,10 +43,6 @@ jobs:
           # 呼び出し元は push したばかりのコミットを渡す。
           # push / workflow_dispatch では空になり、既定のrefが使われる
           ref: ${{ inputs.ref }}
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -62,7 +58,7 @@ jobs:
       # ビルドログと feed.xml を検査してから公開する
       - name: Validate build output
         run: |
-          python scripts/validate_build.py --log build.log --feed dist/feed.xml \
+          npm run validate -- --log build.log --feed dist/feed.xml \
             --dist dist --min-entries 1
       - name: Upload build log on failure
         if: failure()
