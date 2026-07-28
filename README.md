@@ -17,7 +17,8 @@ Astro で構築された日本語のブログサイトです。モダンなデ�
 
 ## 📋 必要な環境
 
-- Node.js 22以上（自動化スクリプトも TypeScript なので Node だけで動きます）
+- Node.js 24以上（自動化スクリプトも TypeScript なので Node だけで動きます）
+  CI と Docker は Node 24（Active LTS）を使います
 - Docker & Docker Compose（推奨）
 
 ## 🛠️ 環境構築

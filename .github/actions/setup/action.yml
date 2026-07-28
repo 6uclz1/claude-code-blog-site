@@ -7,7 +7,9 @@ inputs:
   node-version:
     description: 使う Node のバージョン
     required: false
-    default: '22'
+    # Active LTS。22 は Maintenance LTS に落ちている。
+    # Dockerfile / Dockerfile.production の node:24-slim と合わせること
+    default: '24'
 
 runs:
   using: composite

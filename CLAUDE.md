@@ -299,7 +299,10 @@ writing it — useful for checking the output length after a prompt change.
   `needs.deploy.result == 'failure'`, not on a bare `failure()`. A bare `failure()` also
   fires when the *build* job failed and `deploy` was skipped, which posted an issue claiming
   the article had been committed when nothing was
-- **Node base image**: the Dockerfiles use `node:22-slim` rather than Alpine because the
+- **Node version**: Node 24 (Active LTS — 22 has dropped to Maintenance). It is set in two
+  places that must stay in sync: the `node-version` default in `.github/actions/setup`
+  (all of CI) and `node:24-slim` in `Dockerfile` / `Dockerfile.production`
+- **Node base image**: the Dockerfiles use `node:24-slim` rather than Alpine because the
   Pagefind binary that `npm ci` fetches is built against glibc
 - **Testing Isolation**: Tests run in containerized environment with mocked external dependencies
 
