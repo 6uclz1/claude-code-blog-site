@@ -10,6 +10,7 @@
  */
 
 import { readFile, readdir } from 'node:fs/promises';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { XMLParser } from 'fast-xml-parser';
@@ -36,6 +37,12 @@ const LOG_PATTERNS: [RegExp, string][] = [
 
 /** 記事のURLは /YYYY/MM/DD/slug/ 形式 */
 const POST_URL_RE = /\/\d{4}\/\d{2}\/\d{2}\/[^/]+\/$/;
+
+/**
+ * 要約が作れなかったときの文言（fetch-and-summarize.ts の SUMMARY_FALLBACK）。
+ * 生成側でも記事に載せないようにしているが、公開前にもう一度確かめる。
+ */
+const FALLBACK_SUMMARY_RE = /要約を生成できませんでした/g;
 
 /** dist の中の記事ページ: YYYY/MM/DD/slug/index.html */
 const POST_PAGE_RE = /^\d{4}\/\d{2}\/\d{2}\/[^/]+\/index\.html$/;
@@ -109,6 +116,29 @@ export async function checkPages(
       `記事の出力数が足りない: _posts ${sources.length}件に対して ${generated} ページ ` +
         `(${sources.length - generated}件が公開されない)`
     );
+  }
+}
+
+/**
+ * 記事の中身に、要約が作れなかった痕跡が残っていないかを検査する。
+ *
+ * フロントマターもURLも正常なので他の検査には引っかからないが、
+ * 「要約を生成できませんでした」だけが並んだ見出しは読む人にとって価値が無い。
+ */
+export async function checkPostContents(postsDir: string, errors: string[]): Promise<void> {
+  if (!(await isDirectory(postsDir))) {
+    errors.push(`記事ディレクトリが見つからない: ${postsDir}`);
+    return;
+  }
+
+  const names = (await readdir(postsDir)).filter(
+    (name) => name.endsWith('.md') && !name.startsWith('.')
+  );
+
+  for (const name of names.sort()) {
+    const body = await readFile(path.join(postsDir, name), 'utf-8');
+    const hits = body.match(FALLBACK_SUMMARY_RE);
+    if (hits) errors.push(`${name}: 要約が生成できていない見出しがある (${hits.length}件)`);
   }
 }
 
@@ -265,6 +295,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   await checkLog(args.log, errors);
   await checkFeed(args.feed, errors, args.minEntries);
   await checkPages(args.dist, args.posts, errors);
+  await checkPostContents(args.posts, errors);
 
   if (errors.length > 0) {
     process.stderr.write('❌ 検証に失敗しました。サイトを公開しません:\n');

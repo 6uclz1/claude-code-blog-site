@@ -15,7 +15,9 @@ import { pathToFileURL } from 'node:url';
 
 import { GoogleGenAI, type GenerateContentConfig } from '@google/genai';
 
-import { extractArticleText } from './lib/article.ts';
+import { AbortRun } from './lib/abort.ts';
+import { extractArticleText, type ArticleContent } from './lib/article.ts';
+import { boilerplateReason } from './lib/boilerplate.ts';
 import {
   formatCivilDate,
   formatDatePath,
@@ -31,9 +33,17 @@ import {
 } from './lib/date.ts';
 import { buildFrontMatter } from './lib/frontmatter.ts';
 import { fileExists } from './lib/fs.ts';
-import { decodeBody, fetchBytes, fetchText, USER_AGENT } from './lib/http.ts';
+import { decodeBody, fetchBytes, fetchText, isTextLike, USER_AGENT } from './lib/http.ts';
 import { describeError, logger } from './lib/logger.ts';
 import { parseFeed, type FeedEntry } from './lib/rss.ts';
+import {
+  fetchTweet,
+  isTwitterUrl,
+  parseTweetRef,
+  tweetText,
+  tweetTitle,
+} from './lib/sources/twitter.ts';
+import { appendJobSummary } from './lib/summary.ts';
 
 export const RSS_URL = 'https://b.hatena.ne.jp/Buchi_6uclz1/rss';
 export const GEMINI_MODEL = 'gemini-2.5-flash';
@@ -41,21 +51,21 @@ export const POSTS_DIR = '_posts';
 
 // 記事本文の取得まわり
 export const HTTP_TIMEOUT_MS = 15_000;
+/** 記事取得のリトライ（429/5xx のみ。404 は待っても変わらないので即諦める） */
+export const ARTICLE_RETRY_COUNT = 1;
 // RSS取得のリトライ（はてな側が不調でもその日の記事を落とさないため）
 export const RSS_RETRY_COUNT = 3;
 export const RSS_RETRY_WAIT_MS = 2_000;
 export const ARTICLE_TEXT_LIMIT = 3000;
 // 本文として採用する最低文字数。これを下回るときは取得失敗とみなして
-// r.jina.ai 側の結果を使う（ログイン誘導やCookie同意だけのページ対策）
+// 次の経路を試す（ログイン誘導やCookie同意だけのページ対策）
 export const MIN_ARTICLE_TEXT_CHARS = 200;
 
 // r.jina.ai 経由の取得
-// Twitter/X のようにJavaScriptでレンダリングされるサイトは HTML を直接取っても本文が無いため、
+// JavaScriptでレンダリングされるサイトは HTML を直接取っても本文が無いため、
 // レンダリング済みのテキストを返してくれる r.jina.ai を使う。
 export const JINA_READER_PREFIX = 'https://r.jina.ai/';
 export const JINA_TIMEOUT_MS = 30_000;
-/** 直接取得を試さず、最初から r.jina.ai を使うホスト */
-export const JINA_FIRST_HOSTS = ['twitter.com', 'x.com', 'mobile.twitter.com', 'nitter.net'];
 
 // 要約の分量。ここを変えると記事全体のボリュームが変わる
 export const SUMMARY_MAX_CHARS = 120;
@@ -67,13 +77,7 @@ export const API_INTERVAL_MS = 2_000;
 
 export const SUMMARY_FALLBACK = '要約を生成できませんでした。詳しくは元記事をご覧ください。';
 
-/** 記事を作らずに異常終了すべき状況（設定不備・要約の全滅など） */
-export class AbortRun extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'AbortRun';
-  }
-}
+export { AbortRun };
 
 /** ブックマーク1件（RSSエントリから必要な情報だけ取り出したもの） */
 export interface Bookmark {
@@ -203,34 +207,24 @@ export function selectBookmarks(entries: FeedEntry[], target: CivilDate): Bookma
 // 記事本文
 // --------------------------------------------------------------------------
 
-/** URLのホスト名を小文字で返す（www. は落とす） */
-function hostOf(url: string): string {
-  let host: string;
-  try {
-    host = new URL(url).hostname;
-  } catch {
-    return '';
-  }
-  host = host.toLowerCase();
-  return host.startsWith('www.') ? host.slice(4) : host;
-}
-
-/** 直接取得を飛ばして r.jina.ai を先に使うべきURLか */
-export function prefersJina(url: string): boolean {
-  const host = hostOf(url);
-  return JINA_FIRST_HOSTS.some((known) => host === known || host.endsWith(`.${known}`));
-}
-
 /** 記事のHTMLを直接取得して本文を抽出する。取得できなければ undefined */
-export async function fetchArticleTextDirect(url: string): Promise<string | undefined> {
+export async function fetchArticleDirect(url: string): Promise<ArticleContent | undefined> {
   try {
-    const { bytes, contentType } = await fetchBytes(url, { timeoutMs: HTTP_TIMEOUT_MS });
+    const { bytes, contentType } = await fetchBytes(url, {
+      timeoutMs: HTTP_TIMEOUT_MS,
+      retries: ARTICLE_RETRY_COUNT,
+    });
+    // PDF や画像を cheerio に渡してもゴミしか出ない
+    if (!isTextLike(contentType)) {
+      logger.warn(`Not a text document (${contentType}): ${url}`);
+      return undefined;
+    }
     const text = extractArticleText(decodeBody(bytes, contentType), ARTICLE_TEXT_LIMIT);
     if (!text) {
       logger.warn(`No content extracted from ${url}`);
       return undefined;
     }
-    return text;
+    return { text, source: 'direct' };
   } catch (error) {
     // 1記事の失敗で全体を止めない
     logger.error(`Error extracting content from ${url}: ${describeError(error)}`);
@@ -243,7 +237,7 @@ export async function fetchArticleTextDirect(url: string): Promise<string | unde
  *
  * JINA_API_KEY があれば付与する（レート制限が緩くなる）。無くても動く。
  */
-export async function fetchArticleTextViaJina(url: string): Promise<string | undefined> {
+export async function fetchArticleViaJina(url: string): Promise<ArticleContent | undefined> {
   const headers: Record<string, string> = {
     'User-Agent': USER_AGENT,
     // Markdownのリンクや画像記法は要約に不要なので、プレーンテキストで受け取る
@@ -253,48 +247,139 @@ export async function fetchArticleTextViaJina(url: string): Promise<string | und
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
   try {
-    const body = await fetchText(JINA_READER_PREFIX + url, {
+    // 対象URLは r.jina.ai のパスとして繋ぐ。`#` はそのまま渡すとフラグメントとして
+    // 切り落とされ、別のページを取りに行ってしまうのでエスケープする
+    const body = await fetchText(JINA_READER_PREFIX + url.replace(/#/g, '%23'), {
       headers,
       timeoutMs: JINA_TIMEOUT_MS,
+      retries: ARTICLE_RETRY_COUNT,
     });
     const text = body.replace(/\s+/g, ' ').trim();
     if (!text) {
       logger.warn(`No content extracted via r.jina.ai from ${url}`);
       return undefined;
     }
-    return text.slice(0, ARTICLE_TEXT_LIMIT);
+    return { text: text.slice(0, ARTICLE_TEXT_LIMIT), source: 'r.jina.ai' };
   } catch (error) {
     logger.error(`Error extracting content via r.jina.ai from ${url}: ${describeError(error)}`);
     return undefined;
   }
 }
 
-export interface ArticleTextDeps {
-  direct: (url: string) => Promise<string | undefined>;
-  viaJina: (url: string) => Promise<string | undefined>;
+/**
+ * Twitter/X のポストを専用の経路で取得する。
+ *
+ * はてなのRSSはポストのタイトルをURLのまま返すことが多いので、
+ * 見出し用のタイトルも一緒に返す。
+ */
+export async function fetchArticleFromTwitter(url: string): Promise<ArticleContent | undefined> {
+  const ref = parseTweetRef(url);
+  if (!ref) return undefined;
+
+  const tweet = await fetchTweet(ref);
+  if (!tweet) return undefined;
+
+  return { text: tweetText(tweet), title: tweetTitle(tweet), source: 'twitter' };
+}
+
+/** 本文の取得経路。上から順に試す */
+export interface ArticleFetchers {
+  twitter: (url: string) => Promise<ArticleContent | undefined>;
+  direct: (url: string) => Promise<ArticleContent | undefined>;
+  jina: (url: string) => Promise<ArticleContent | undefined>;
+}
+
+export const defaultFetchers: ArticleFetchers = {
+  twitter: fetchArticleFromTwitter,
+  direct: fetchArticleDirect,
+  jina: fetchArticleViaJina,
+};
+
+export interface FetchStep {
+  fetcher: keyof ArticleFetchers;
+  /** これ以上の長さが取れたらその場で採用する */
+  minChars: number;
 }
 
 /**
- * 記事の本文テキストを取得する。取得できなければ undefined。
+ * URLごとの取得手順を決める。空配列なら「取得しても意味が無いURL」。
  *
- * 通常はHTMLを直接取得して抽出するが、Twitter/X のようにJavaScriptで描画されるサイトは
- * 本文が取れない（あるいはログイン誘導だけが取れる）ため、r.jina.ai にフォールバックする。
+ * ホストごとの事情はここに集約する。取得経路を増やすときは
+ * ArticleFetchers に足してこの表に並べれば済むようにしてある。
  */
-export async function fetchArticleText(
-  url: string,
-  deps: ArticleTextDeps = { direct: fetchArticleTextDirect, viaJina: fetchArticleTextViaJina }
-): Promise<string | undefined> {
-  if (prefersJina(url)) {
-    logger.info(`Using r.jina.ai for ${url}`);
-    const text = await deps.viaJina(url);
-    return text ? text : await deps.direct(url);
+export function fetchPlan(url: string): FetchStep[] {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return [];
   }
 
-  const text = await deps.direct(url);
-  if (text && text.length >= MIN_ARTICLE_TEXT_CHARS) return text;
+  if (isTwitterUrl(parsed)) {
+    // プロフィールやトレンドのURLは要約する本文が存在しない。
+    // 取りに行っても「JavaScriptを有効にしてください」しか返ってこないので、
+    // 記事に載せる価値のある結果は得られない
+    if (!parseTweetRef(url)) return [];
+    // ポストは140字程度のこともあるため、長さでは足切りしない
+    return [
+      { fetcher: 'twitter', minChars: 1 },
+      { fetcher: 'jina', minChars: MIN_ARTICLE_TEXT_CHARS },
+      { fetcher: 'direct', minChars: MIN_ARTICLE_TEXT_CHARS },
+    ];
+  }
 
-  logger.info(`Falling back to r.jina.ai for ${url}`);
-  return (await deps.viaJina(url)) ?? text;
+  return [
+    { fetcher: 'direct', minChars: MIN_ARTICLE_TEXT_CHARS },
+    { fetcher: 'jina', minChars: MIN_ARTICLE_TEXT_CHARS },
+  ];
+}
+
+/** 本文取得の結果。失敗した理由は run() がまとめて報告する */
+export type ArticleOutcome =
+  | { ok: true; content: ArticleContent }
+  | { ok: false; reason: string };
+
+/**
+ * 記事の本文を取得する。
+ *
+ * 取得できた「だけ」では採用しない。ログイン誘導・JavaScript必須の案内・
+ * r.jina.ai のエラー通知はどれも 200 で返ってくるうえ、そのまま要約すると
+ * 記事の内容とは無関係な要約が出来上がるため、定型文を弾いてから次の経路に進む。
+ */
+export async function fetchArticle(
+  url: string,
+  fetchers: ArticleFetchers = defaultFetchers
+): Promise<ArticleOutcome> {
+  const plan = fetchPlan(url);
+  if (plan.length === 0) return { ok: false, reason: '本文のあるURLではない' };
+
+  const reasons: string[] = [];
+  // どの経路も規定の長さに届かなかったときに使う、いちばんマシな結果
+  let fallback: ArticleContent | undefined;
+
+  for (const step of plan) {
+    const content = await fetchers[step.fetcher](url);
+    if (!content?.text) {
+      reasons.push(`${step.fetcher}: 本文が取れない`);
+      continue;
+    }
+
+    const boilerplate = boilerplateReason(content.text);
+    if (boilerplate) {
+      logger.warn(`Rejected ${step.fetcher} result for ${url}: ${boilerplate}`);
+      reasons.push(`${step.fetcher}: ${boilerplate}`);
+      continue;
+    }
+
+    if (content.text.length >= step.minChars) return { ok: true, content };
+
+    reasons.push(`${step.fetcher}: 本文が短い(${content.text.length}文字)`);
+    if (!fallback || content.text.length > fallback.text.length) fallback = content;
+  }
+
+  // 短くても定型文ではない本文が残っていれば、それを使う
+  if (fallback) return { ok: true, content: fallback };
+  return { ok: false, reason: reasons.join(' / ') };
 }
 
 // --------------------------------------------------------------------------
@@ -536,46 +621,79 @@ export async function writePost(
 
 export interface SummarizeBookmarksOptions {
   intervalMs?: number;
-  getArticleText?: (url: string) => Promise<string | undefined>;
+  getArticle?: (url: string) => Promise<ArticleOutcome>;
   wait?: (ms: number) => Promise<void>;
 }
 
-/** 各ブックマークの本文を取得して要約する（本文が取れないものはスキップ） */
+/** 記事に載せられなかったブックマークと、その理由 */
+export interface SkippedBookmark {
+  bookmark: Bookmark;
+  reason: string;
+}
+
+export interface SummarizeResult {
+  digests: SummarizedBookmark[];
+  /** 落ちたものを黙って捨てると、記事に穴が空いたことに誰も気づけない */
+  skipped: SkippedBookmark[];
+}
+
+/**
+ * 各ブックマークの本文を取得して要約する。
+ *
+ * 本文が取れなかったもの・要約に失敗したものは記事に載せない
+ * （「要約を生成できませんでした」だけの見出しは読む人にとって価値が無く、
+ * フロントマターは正常なので公開前ゲートでも気づけない）。
+ * 代わりに理由を添えて `skipped` に集め、呼び出し側が報告する。
+ */
 export async function summarizeBookmarks(
   bookmarks: Bookmark[],
   summarizer: Summarizer,
   options: SummarizeBookmarksOptions = {}
-): Promise<SummarizedBookmark[]> {
+): Promise<SummarizeResult> {
   const intervalMs = options.intervalMs ?? API_INTERVAL_MS;
-  const getArticleText = options.getArticleText ?? ((url: string) => fetchArticleText(url));
+  const getArticle = options.getArticle ?? ((url: string) => fetchArticle(url));
   const wait = options.wait ?? sleep;
 
   const digests: SummarizedBookmark[] = [];
+  const skipped: SkippedBookmark[] = [];
 
   for (const [index, bookmark] of bookmarks.entries()) {
     logger.info(`Processing: ${bookmark.title}`);
-    const articleText = await getArticleText(bookmark.url);
-    if (!articleText) {
-      logger.warn(`Skipping entry due to content extraction failure: ${bookmark.title}`);
+    const outcome = await getArticle(bookmark.url);
+    if (!outcome.ok) {
+      logger.warn(`Skipping ${bookmark.url}: ${outcome.reason}`);
+      skipped.push({ bookmark, reason: outcome.reason });
       continue;
     }
 
-    digests.push([bookmark, await summarizer.summarize(bookmark, articleText)]);
+    // 取得経路がタイトルを持っていて、はてなのタイトルがURLのままなら差し替える
+    const titled = withResolvedTitle(bookmark, outcome.content);
+    const entry = await summarizer.summarize(titled, outcome.content.text);
+    if (entry.summary === SUMMARY_FALLBACK) {
+      skipped.push({ bookmark: titled, reason: '要約の生成に失敗' });
+    } else {
+      digests.push([titled, entry]);
+    }
 
     if (intervalMs && index < bookmarks.length - 1) await wait(intervalMs);
   }
 
-  return digests;
+  return { digests, skipped };
+}
+
+/** はてなのRSSがタイトルを持たない（URLがそのまま入っている）ときだけ差し替える */
+export function withResolvedTitle(bookmark: Bookmark, content: ArticleContent): Bookmark {
+  if (!content.title) return bookmark;
+  const title = bookmark.title.trim();
+  if (title && !/^https?:\/\//i.test(title)) return bookmark;
+  return { ...bookmark, title: content.title };
 }
 
 /** run() が呼び出す処理。テストから差し替えられるようにまとめてある */
 export interface RunDeps {
   fetchEntries: (rssUrl?: string) => Promise<FeedEntry[]>;
   selectBookmarks: (entries: FeedEntry[], target: CivilDate) => Bookmark[];
-  summarizeBookmarks: (
-    bookmarks: Bookmark[],
-    summarizer: Summarizer
-  ) => Promise<SummarizedBookmark[]>;
+  summarizeBookmarks: (bookmarks: Bookmark[], summarizer: Summarizer) => Promise<SummarizeResult>;
   writePost: (
     digests: SummarizedBookmark[],
     target: CivilDate,
@@ -591,6 +709,27 @@ const defaultDeps: RunDeps = {
   writePost,
   createSummarizer: (apiKey) => new GeminiSummarizer(apiKey),
 };
+
+/** 記事に載らなかったブックマークをログとジョブサマリに出す */
+async function reportSkipped(skipped: SkippedBookmark[], total: number): Promise<void> {
+  logger.warn(`${total}件中${skipped.length}件を記事に載せられませんでした:`);
+  for (const { bookmark, reason } of skipped) {
+    logger.warn(`  - ${bookmark.url}: ${reason}`);
+  }
+
+  const rows = skipped.map(
+    ({ bookmark, reason }) => `| ${bookmark.title || '(タイトルなし)'} | ${bookmark.url} | ${reason} |`
+  );
+  await appendJobSummary(
+    [
+      `### 記事に載せられなかったブックマーク (${skipped.length}/${total}件)`,
+      '',
+      '| タイトル | URL | 理由 |',
+      '| --- | --- | --- |',
+      ...rows,
+    ].join('\n')
+  );
+}
 
 export interface RunOptions {
   targetDate?: CivilDate;
@@ -636,23 +775,24 @@ export async function run(options: RunOptions = {}): Promise<number> {
     return 0;
   }
 
-  const digests = await deps.summarizeBookmarks(bookmarks, deps.createSummarizer(apiKey));
+  const { digests, skipped } = await deps.summarizeBookmarks(
+    bookmarks,
+    deps.createSummarizer(apiKey)
+  );
 
-  // ブックマークはあったのに1件も処理できていない状態。記事が作られないまま
+  // 落ちたブックマークはログとジョブサマリの両方に残す。ワークフローが成功したまま
+  // 記事から数件消えるのがいちばん気づきにくい壊れ方なので、必ず表に出す。
+  if (skipped.length > 0) await reportSkipped(skipped, bookmarks.length);
+
+  // ブックマークはあったのに1件も記事にできていない状態。記事が作られないまま
   // ワークフローが成功扱いで終わると、穴が空いたことに誰も気づけないので止める。
+  // （中身が「要約を生成できませんでした」だけの記事はフロントマターもURLも
+  // 正常なため、公開前ゲート(validate-build.ts)まで進むと検知できない）
   if (digests.length === 0) {
     throw new AbortRun(
-      `${bookmarks.length}件のブックマークすべてで本文を取得できず、記事を作成しません ` +
-        '(取得先の仕様変更・ネットワーク・r.jina.ai のレート制限を確認してください)'
-    );
-  }
-
-  // 要約が1件も作れていない記事は中身が無いのと同じなので公開しない。
-  // フロントマターもURLも正常なため公開前ゲート(validate-build.ts)では検知できず、
-  // ここで止めないと「要約を生成できませんでした」だけが並んだ記事が公開されてしまう。
-  if (digests.every(([, entry]) => entry.summary === SUMMARY_FALLBACK)) {
-    throw new AbortRun(
-      'すべての要約に失敗したため記事を作成しません (APIキー・レート制限・SDKの互換性を確認してください)'
+      `${bookmarks.length}件のブックマークすべてで本文取得か要約に失敗し、記事を作成しません ` +
+        '(取得先の仕様変更・ネットワーク・APIキー・レート制限を確認してください)\n' +
+        skipped.map(({ bookmark, reason }) => `  - ${bookmark.url}: ${reason}`).join('\n')
     );
   }
 

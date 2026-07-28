@@ -52,7 +52,9 @@ build log and the generated `feed.xml` (empty titles, duplicate URLs, build-time
 timestamps) and blocks the deploy. With `--dist dist` it also counts the generated
 `YYYY/MM/DD/slug/index.html` pages against `_posts/*.md` — `feed.xml` only carries the
 newest 20 entries, so anything older that stops being generated is invisible to the
-feed checks. The daily automation runs this gate *before*
+feed checks. `checkPostContents()` also greps `_posts/*.md` for the
+「要約を生成できませんでした」 fallback — 生成側でも載せないようにしているが、front matter も
+URL も正常な記事なので他の検査では捕まらない。The daily automation runs this gate *before*
 committing — nothing that fails validation is committed or published, and a failure
 opens an issue automatically.
 
@@ -150,9 +152,13 @@ docker compose run --rm scripts npm test
   - `scripts/check-site-health.ts`: 公開中の feed.xml を外から検査する異常検知
   - `scripts/coverage-report.ts`: vitest のカバレッジを Markdown 化（PRコメント用）
   - `scripts/lib/`: 共通部品。`date.ts`（JST固定オフセットの暦日）, `frontmatter.ts`
-    （front matter の生成／分割。Astro と同じ js-yaml を使う）, `http.ts`（タイムアウト付き
-    取得と charset 判定）, `rss.ts`（RSS 1.0/2.0・Atom を同じ形に正規化）,
-    `article.ts`（cheerio による本文抽出）, `xml-node.ts`, `fs.ts`, `logger.ts`
+    （front matter の生成／分割。Astro と同じ js-yaml を使う）, `http.ts`（タイムアウト・
+    リトライ・読み込みサイズ上限・charset 判定）, `rss.ts`（RSS 1.0/2.0・Atom を同じ形に
+    正規化）, `article.ts`（cheerio による本文抽出）, `boilerplate.ts`（ログイン誘導や
+    ボット判定ページを本文と取り違えないための判定）, `sources/twitter.ts`（x.com の
+    ポスト取得）, `summary.ts`（GitHub Actions のジョブサマリ）, `abort.ts`（`AbortRun`）,
+    `xml-node.ts`, `fs.ts`, `logger.ts`。日次記事の見出しの読み取りは
+    `src/lib/bookmarks.ts` を直接 import する（フィードや `/sites/` と同じ実装を使う）
   - `tests/`: vitest tests for the scripts (Gemini SDK と fetch はモックする)
 - **CI/CD**: `.github/workflows/` for automated deployment and content updates, plus
   `.github/actions/` — the composite actions (`setup`, `report-failure`) the workflows share
@@ -231,25 +237,41 @@ take injectable `direct` / `viaJina`) — ESM の export は差し替えられ�
    timeout and parsed by `scripts/lib/rss.ts` (fast-xml-parser), then every date an entry
    carries (`dc:date`, entry-id URL pattern, `pubDate`/`published`) is collected and the ones
    matching the target day are kept, de-duplicating by URL
-2. **Content Extraction**: `fetchArticleText()` picks between two fetchers and returns
-   `undefined` when neither yields text (the entry is then skipped):
-   - `fetchArticleTextDirect()` scrapes the HTML with cheerio using fallback selectors
+2. **Content Extraction**: `fetchPlan(url)` decides *which* fetchers to try and in what
+   order, and `fetchArticle()` runs that plan. Adding a host-specific way of fetching means
+   adding an entry to `ArticleFetchers` and a line to `fetchPlan()` — nothing else changes.
+   The fetchers are:
+   - `fetchArticleDirect()` scrapes the HTML with cheerio using fallback selectors
      (`scripts/lib/article.ts`). `Response.text()` は常に UTF-8 として読むため、
-     charset の判定は `scripts/lib/http.ts` の `decodeBody()` で行う
-   - `fetchArticleTextViaJina()` fetches `https://r.jina.ai/<url>` for rendered text
+     charset の判定は `scripts/lib/http.ts` の `decodeBody()` で行う。`isTextLike()` で
+     PDF や画像は先に弾く（cheerio に渡してもゴミしか出ない）
+   - `fetchArticleViaJina()` fetches `https://r.jina.ai/<url>` for rendered text
+   - `fetchArticleFromTwitter()` (`scripts/lib/sources/twitter.ts`) — x.com/twitter.com は
+     ログインしないと本文を返さないため、直接取得でも r.jina.ai 経由でも
+     「JavaScriptを有効にしてください」しか取れない。認証不要で本文が取れる
+     publish.twitter.com の oEmbed（公式）を先に、`/i/web/status/...` のように
+     アカウントが分からず oEmbed が使えないときは cdn.syndication.twimg.com（埋め込み
+     ウィジェットが使う非公式API）を先に試す。ポストは140字程度のこともあるので
+     `MIN_ARTICLE_TEXT_CHARS` の足切りをかけない。プロフィールやトレンドのURL
+     （`x.com/i/trending/...`）は要約する本文が存在しないので、取得そのものを行わない
 
-   Twitter/X (`JINA_FIRST_HOSTS`) is JavaScript-rendered and shows a login wall, so direct
-   scraping returns nothing usable — those hosts go through r.jina.ai first and fall back to
-   direct. Every other host is scraped directly first and falls back to r.jina.ai when the
-   result is missing or shorter than `MIN_ARTICLE_TEXT_CHARS` (cookie banners, login prompts).
+   **取得できた「だけ」では採用しない**: ログイン誘導・JavaScript必須の案内・ボット判定・
+   r.jina.ai のエラー通知はすべて 200 で返るうえ、そのまま要約すると記事と無関係な
+   要約ができあがる（過去記事に実例がある）。`scripts/lib/boilerplate.ts` が本文の
+   先頭だけを見てこれらを弾き、次の経路に進む。どの経路も `MIN_ARTICLE_TEXT_CHARS` に
+   届かなければ、定型文ではない中でいちばん長い結果を使う。
+   はてなのRSSはポストのタイトルをURLのまま返すため、取得経路がタイトルを持っていて
+   はてな側のタイトルがURLのときだけ `withResolvedTitle()` が見出しを差し替える
 3. **AI Summarization**: `GeminiSummarizer.summarize()` asks Gemini (via the `@google/genai`
    SDK) for JSON (`{"summary": ..., "points": [...]}`) using `responseMimeType:
    application/json`, and `parseDigest()` normalizes/truncates it — prompt wording alone
    doesn't keep the length stable. A per-article failure falls back to `SUMMARY_FALLBACK`,
-   but if *every* article ends up on the fallback, `run()` raises `AbortRun` and no post is
-   written: the front matter of such a post is valid, so the publishing gate cannot catch it.
-   `run()` also aborts when bookmarks were found but *none* of them yielded article text —
-   otherwise the workflow finishes green with no post and nobody notices the gap. When the
+   and そのブックマークは記事に載せない（「要約を生成できませんでした」だけの見出しは
+   読む人にとって価値が無く、front matter は正常なので公開前ゲートでも気づけない）。
+   本文が取れなかったもの・要約に失敗したものは理由付きで `SummarizeResult.skipped` に
+   集まり、`run()` がログと **ジョブサマリ**（`scripts/lib/summary.ts`）の両方に出す —
+   ワークフローが成功したまま記事から数件だけ消えるのがいちばん気づきにくい壊れ方なので、
+   必ず表に出す。1件も残らなければ `AbortRun` を投げて記事を作らない。When the
    day's post already exists it returns early (before any API call) and says so at WARNING
 4. **Markdown Generation**: `renderPost()` builds the post — one `## [title](url)` heading, a
    one-line summary, and up to 3 short bullets per bookmark — and `writePost()` saves it to
@@ -323,7 +345,8 @@ writing it — useful for checking the output length after a prompt change.
   rather than in `posts.ts`
 - **Dependency injection instead of monkeypatching**: ESM exports cannot be replaced at
   runtime, so anything a test needs to control is a parameter — `run({ deps })`,
-  `fetchArticleText(url, { direct, viaJina })`, `new GeminiSummarizer(key, { client })`.
+  `fetchArticle(url, fetchers)`, `fetchTweet(ref, fetchers)`,
+  `new GeminiSummarizer(key, { client })`.
   Network-level tests stub `fetch` with `vi.stubGlobal`
 - **Gemini API Mocking**: All external API calls are mocked to avoid API key dependencies.
   `generationConfig()` returns the SDK's own `GenerateContentConfig` type, so a setting the
