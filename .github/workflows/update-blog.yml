@@ -18,6 +18,9 @@ jobs:
   update-blog:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      pushed: ${{ steps.commit.outputs.pushed }}
+      sha: ${{ steps.commit.outputs.sha }}
 
     steps:
       - name: Checkout repository
@@ -92,9 +95,11 @@ jobs:
           if-no-files-found: ignore
 
       # 検証を通ったのでコミットして push する。
-      # 公開は push を受けた deploy.yml に任せる。両方から Pages にデプロイすると
-      # 同じ environment に対する同時デプロイになり、片方が失敗する
+      # 公開はこの後の deploy ジョブ（deploy.yml の呼び出し）に任せる。
+      # GITHUB_TOKEN による push は deploy.yml の push トリガーを起動しないため、
+      # ここから明示的に呼ばないと記事はコミットされたまま公開されない
       - name: Commit and push changes
+        id: commit
         if: steps.verify-changed-files.outputs.changed == 'true'
         run: |
           git config --local user.email "action@github.com"
@@ -106,6 +111,8 @@ jobs:
           # rebase しながら数回まで再試行する
           for attempt in 1 2 3 4; do
             if git push origin HEAD:main; then
+              echo "pushed=true" >> $GITHUB_OUTPUT
+              echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
               exit 0
             fi
             echo "push に失敗しました (試行 ${attempt}/4)。rebase して再試行します"
@@ -137,5 +144,48 @@ jobs:
             gh issue comment "$existing" --body "$body"
           else
             gh issue create --title "自動更新ワークフローが失敗しました" \
+              --label automation-failure --body "$body"
+          fi
+
+  # push しただけでは公開されないので、ここから Pages へのデプロイを呼ぶ。
+  # deploy.yml 側の push トリガーはこの push では起動しない
+  deploy:
+    needs: update-blog
+    if: needs.update-blog.outputs.pushed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      ref: ${{ needs.update-blog.outputs.sha }}
+
+  # 記事はコミット済みなのに公開だけ落ちた状態に気づけるようにする
+  report-deploy-failure:
+    needs: deploy
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Report failure as issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create automation-failure --color B60205 \
+            --description "自動更新ワークフローの失敗" 2>/dev/null || true
+
+          body="自動生成した記事のコミットは成功しましたが、GitHub Pages への公開に失敗しました。main には記事があるのにサイトに出ていない状態です。
+
+          - 実行ログ: ${RUN_URL}
+
+          再実行する場合は Actions から \`Deploy Astro site to Pages\` を workflow_dispatch してください。"
+
+          existing=$(gh issue list --label automation-failure --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "自動更新した記事の公開に失敗しました" \
               --label automation-failure --body "$body"
           fi

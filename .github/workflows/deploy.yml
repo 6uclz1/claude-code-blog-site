@@ -9,6 +9,16 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+  # 自動更新ワークフローから呼び出すための入口。
+  # GITHUB_TOKEN による push は他のワークフローを起動しない（再帰実行の防止）ので、
+  # 上の push トリガーでは自動生成された記事が永久に公開されない
+  workflow_call:
+    inputs:
+      ref:
+        description: 'ビルドするコミット。未指定ならイベント既定のref'
+        required: false
+        type: string
+
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
@@ -29,6 +39,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 呼び出し元は push したばかりのコミットを渡す。
+          # push / workflow_dispatch では空になり、既定のrefが使われる
+          ref: ${{ inputs.ref }}
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
