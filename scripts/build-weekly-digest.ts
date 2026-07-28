@@ -16,6 +16,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+// 見出しの読み取りはフィードや /sites/ と同じものを使う。日次記事の見出しは
+// 新旧2形式あり、二重に実装すると片方だけ直して静かにズレる
+import { extractBookmarks, hostOf, type BookmarkRef } from '../src/lib/bookmarks.ts';
+
+import { AbortRun } from './lib/abort.ts';
 import {
   addDays,
   formatCivilDate,
@@ -43,24 +48,9 @@ export const WEEK_DAYS = 7;
 /** 「よく読んだサイト」に出す上限 */
 export const TOP_HOSTS = 5;
 
-// 日次記事の見出し。src/lib/bookmarks.ts と同じ2形式を扱う
-const HEADING_WITH_LINK_RE = /^##\s+\[(.+)\]\((https?:\/\/[^)]+)\)\s*$/;
-const HEADING_NUMBERED_RE = /^##\s+\d+\.\s+(.+?)\s*$/;
-const URL_LINE_RE = /^\*\*URL:\*\*\s*\[[^\]]*\]\((https?:\/\/[^)]+)\)/;
+export { AbortRun, extractBookmarks };
 
-/** 記事を作らずに異常終了すべき状況 */
-export class AbortRun extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'AbortRun';
-  }
-}
-
-export interface Bookmark {
-  title: string;
-  /** 旧形式（`## 1. タイトル`）にはURLが無いため任意 */
-  url?: string;
-}
+export type Bookmark = BookmarkRef;
 
 /** 日次記事1本ぶん */
 export interface DailyDigest {
@@ -71,47 +61,6 @@ export interface DailyDigest {
 // --------------------------------------------------------------------------
 // 日次記事の読み取り
 // --------------------------------------------------------------------------
-
-const cleanTitle = (raw: string) => raw.replace(/[*`_]/g, '').replace(/\s+/g, ' ').trim();
-
-/** 日次記事の本文からブックマーク（タイトルとURL）を出現順に取り出す */
-export function extractBookmarks(body: string): Bookmark[] {
-  const bookmarks: Bookmark[] = [];
-  // 旧形式は見出しの下の `**URL:**` 行にURLがあるため、後から補う
-  let pendingTitle: string | undefined;
-
-  for (const line of body.split('\n')) {
-    const linked = HEADING_WITH_LINK_RE.exec(line);
-    if (linked) {
-      if (pendingTitle) {
-        bookmarks.push({ title: pendingTitle });
-        pendingTitle = undefined;
-      }
-      const title = cleanTitle(linked[1]!);
-      if (title) bookmarks.push({ title, url: linked[2]! });
-      continue;
-    }
-
-    const numbered = HEADING_NUMBERED_RE.exec(line);
-    if (numbered) {
-      if (pendingTitle) bookmarks.push({ title: pendingTitle });
-      pendingTitle = cleanTitle(numbered[1]!) || undefined;
-      continue;
-    }
-
-    if (pendingTitle) {
-      const urlLine = URL_LINE_RE.exec(line);
-      if (urlLine) {
-        bookmarks.push({ title: pendingTitle, url: urlLine[1]! });
-        pendingTitle = undefined;
-      }
-    }
-  }
-
-  if (pendingTitle) bookmarks.push({ title: pendingTitle });
-
-  return bookmarks;
-}
 
 export function dailyPostPath(day: CivilDate, postsDir: string = POSTS_DIR): string {
   return path.join(postsDir, `${formatCivilDate(day)}-${DAILY_SLUG}.md`);
@@ -159,24 +108,13 @@ export function postPath(end: CivilDate, postsDir: string = POSTS_DIR): string {
   return path.join(postsDir, `${formatCivilDate(end)}-${WEEKLY_SLUG}.md`);
 }
 
-function hostOf(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  let host: string;
-  try {
-    host = new URL(url).hostname.toLowerCase();
-  } catch {
-    return undefined;
-  }
-  const stripped = host.startsWith('www.') ? host.slice(4) : host;
-  return stripped || undefined;
-}
-
 /** その週によく読んだサイト（2件以上のものだけ） */
 export function topHosts(digests: DailyDigest[], limit: number = TOP_HOSTS): [string, number][] {
   const counts = new Map<string, number>();
   for (const digest of digests) {
     for (const bookmark of digest.bookmarks) {
-      const host = hostOf(bookmark.url);
+      // 旧形式の見出しはURLを持たないことがある
+      const host = bookmark.url ? hostOf(bookmark.url) : undefined;
       if (host) counts.set(host, (counts.get(host) ?? 0) + 1);
     }
   }

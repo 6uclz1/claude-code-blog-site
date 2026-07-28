@@ -5,7 +5,13 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { checkFeed, checkLog, checkPages, main } from '../scripts/validate-build.ts';
+import {
+  checkFeed,
+  checkLog,
+  checkPages,
+  checkPostContents,
+  main,
+} from '../scripts/validate-build.ts';
 import { createTempDir } from './helpers.ts';
 
 const FEED_HEADER =
@@ -257,21 +263,65 @@ describe('checkPages', () => {
   });
 });
 
+describe('checkPostContents', () => {
+  let posts: string;
+
+  beforeEach(async () => {
+    posts = path.join(tmp.dir, '_posts');
+    await mkdir(posts, { recursive: true });
+  });
+
+  const addPost = (name: string, body: string) =>
+    writeFile(path.join(posts, name), `---\ntitle: t\n---\n\n${body}\n`, 'utf-8');
+  const errorsFor = async () => {
+    const errors: string[] = [];
+    await checkPostContents(posts, errors);
+    return errors;
+  };
+
+  it('要約のある記事は通す', async () => {
+    await addPost('2026-07-25-hatena-bookmarks.md', '## [記事](https://example.com/)\n\n要約。');
+
+    expect(await errorsFor()).toEqual([]);
+  });
+
+  it('要約が生成できていない見出しを見つける', async () => {
+    // フロントマターもURLも正常なので、他の検査には引っかからない
+    await addPost(
+      '2026-07-25-hatena-bookmarks.md',
+      '## [記事](https://example.com/)\n\n要約を生成できませんでした。詳しくは元記事をご覧ください。'
+    );
+
+    expect((await errorsFor())[0]).toContain('要約が生成できていない見出しがある');
+  });
+
+  it('記事ディレクトリが無いことを見つける', async () => {
+    const errors: string[] = [];
+    await checkPostContents(path.join(tmp.dir, 'missing'), errors);
+
+    expect(errors[0]).toContain('記事ディレクトリが見つからない');
+  });
+});
+
 describe('main', () => {
-  beforeEach(() => {
+  let posts: string;
+
+  beforeEach(async () => {
     vi.spyOn(process.stdout, 'write').mockReturnValue(true);
     vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    posts = path.join(tmp.dir, '_posts');
+    await mkdir(posts, { recursive: true });
   });
 
   it('問題がなければ 0 を返す', async () => {
     const feedPath = await write('feed.xml', feed(entry()));
 
-    expect(await main(['--feed', feedPath])).toBe(0);
+    expect(await main(['--feed', feedPath, '--posts', posts])).toBe(0);
   });
 
   it('壊れていれば 1 を返す', async () => {
     const feedPath = await write('feed.xml', feed(entry({ title: '' })));
 
-    expect(await main(['--feed', feedPath])).toBe(1);
+    expect(await main(['--feed', feedPath, '--posts', posts])).toBe(1);
   });
 });

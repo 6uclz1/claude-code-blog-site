@@ -12,21 +12,24 @@ import {
   SUMMARY_FALLBACK,
   SUMMARY_MAX_CHARS,
   digest,
-  fetchArticleText,
-  fetchArticleTextDirect,
-  fetchArticleTextViaJina,
+  fetchArticle,
+  fetchArticleDirect,
+  fetchArticleViaJina,
   fetchEntries,
+  fetchPlan,
   generationConfig,
   parseArgs,
   parseDigest,
   postPath,
-  prefersJina,
   renderPost,
   run,
   selectBookmarks,
   summarizeBookmarks,
+  withResolvedTitle,
   writePost,
   yesterdayInJst,
+  type ArticleFetchers,
+  type ArticleOutcome,
   type Bookmark,
   type GenerativeClient,
   type SummarizedBookmark,
@@ -172,16 +175,37 @@ const longArticleHtml = (marker = 'main content') =>
   `<html><body><article><h1>Test Article</h1><p>This is the ${marker}.</p>` +
   `<p>${'本文のテキストです。'.repeat(40)}</p></article></body></html>`;
 
-describe('fetchArticleTextDirect', () => {
+describe('fetchArticleDirect', () => {
   it('本文を抽出する', async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse(longArticleHtml()));
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await fetchArticleTextDirect('https://example.com/test');
+    const result = await fetchArticleDirect('https://example.com/test');
 
-    expect(result).toContain('Test Article');
-    expect(result).toContain('main content');
+    expect(result?.text).toContain('Test Article');
+    expect(result?.text).toContain('main content');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('ブラウザらしいヘッダを送る', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(longArticleHtml()));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchArticleDirect('https://example.com/test');
+
+    // Accept-Language が無いと日本語ページで英語版に振り分けられることがある
+    const headers = fetchMock.mock.calls[0]![1].headers;
+    expect(headers['Accept-Language']).toContain('ja');
+    expect(headers.Accept).toContain('text/html');
+  });
+
+  it('HTML以外（PDFなど）は本文として扱わない', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(okResponse('%PDF-1.7 binary...', 'application/pdf'))
+    );
+
+    expect(await fetchArticleDirect('https://example.com/slides.pdf')).toBeUndefined();
   });
 
   it('UTF-8 以外のページはヘッダの charset に従って読む', async () => {
@@ -193,33 +217,42 @@ describe('fetchArticleTextDirect', () => {
       vi.fn().mockResolvedValue(okResponse(bytes, 'text/html; charset=utf-16le'))
     );
 
-    expect(await fetchArticleTextDirect('https://example.com/test')).toBe('日本語の本文');
+    expect((await fetchArticleDirect('https://example.com/test'))?.text).toBe('日本語の本文');
   });
 
   it('取得に失敗したら undefined', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Request failed')));
 
-    expect(await fetchArticleTextDirect('https://example.com/test')).toBeUndefined();
+    expect(await fetchArticleDirect('https://example.com/test')).toBeUndefined();
   });
 
   it('本文が空なら undefined', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse('<html><body></body></html>')));
 
-    expect(await fetchArticleTextDirect('https://example.com/test')).toBeUndefined();
+    expect(await fetchArticleDirect('https://example.com/test')).toBeUndefined();
   });
 });
 
-describe('fetchArticleTextViaJina', () => {
+describe('fetchArticleViaJina', () => {
   it('r.jina.ai を前置きしてテキストを返す', async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse('  ツイート本文\n\nです  ', 'text/plain'));
     vi.stubGlobal('fetch', fetchMock);
     vi.stubEnv('JINA_API_KEY', '');
 
-    const result = await fetchArticleTextViaJina('https://x.com/user/status/123');
+    const result = await fetchArticleViaJina('https://x.com/user/status/123');
 
-    expect(result).toBe('ツイート本文 です');
+    expect(result?.text).toBe('ツイート本文 です');
     expect(fetchMock.mock.calls[0]![0]).toBe('https://r.jina.ai/https://x.com/user/status/123');
     expect(fetchMock.mock.calls[0]![1].headers.Authorization).toBeUndefined();
+  });
+
+  it('URLの # は別ページを取りに行かないようエスケープする', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse('本文', 'text/plain'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchArticleViaJina('https://example.com/a#section');
+
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://r.jina.ai/https://example.com/a%23section');
   });
 
   it('JINA_API_KEY があれば bearer トークンを送る', async () => {
@@ -227,7 +260,7 @@ describe('fetchArticleTextViaJina', () => {
     vi.stubGlobal('fetch', fetchMock);
     vi.stubEnv('JINA_API_KEY', 'secret-token');
 
-    await fetchArticleTextViaJina('https://x.com/user/status/123');
+    await fetchArticleViaJina('https://x.com/user/status/123');
 
     expect(fetchMock.mock.calls[0]![1].headers.Authorization).toBe('Bearer secret-token');
   });
@@ -235,78 +268,153 @@ describe('fetchArticleTextViaJina', () => {
   it('空なら undefined', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse('   ', 'text/plain')));
 
-    expect(await fetchArticleTextViaJina('https://x.com/user/status/123')).toBeUndefined();
+    expect(await fetchArticleViaJina('https://x.com/user/status/123')).toBeUndefined();
   });
 
   it('取得に失敗したら undefined', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Request failed')));
 
-    expect(await fetchArticleTextViaJina('https://x.com/user/status/123')).toBeUndefined();
+    expect(await fetchArticleViaJina('https://x.com/user/status/123')).toBeUndefined();
   });
 });
 
-describe('prefersJina', () => {
-  it('Twitter/X は r.jina.ai を先に使う', () => {
+describe('fetchPlan', () => {
+  const names = (url: string) => fetchPlan(url).map((step) => step.fetcher);
+
+  it('通常のURLは直接取得してから r.jina.ai に落とす', () => {
+    expect(names('https://example.com/a')).toEqual(['direct', 'jina']);
+  });
+
+  it('ポストは専用の取得経路を先に使う', () => {
     for (const url of [
       'https://x.com/user/status/1',
       'https://twitter.com/user/status/1',
       'https://mobile.twitter.com/user/status/1',
       'https://www.x.com/user/status/1',
+      'https://x.com/i/web/status/1',
     ]) {
-      expect(prefersJina(url), url).toBe(true);
+      expect(names(url), url).toEqual(['twitter', 'jina', 'direct']);
     }
   });
 
-  it('それ以外のホストは直接取得する', () => {
-    for (const url of ['https://example.com/x.com', 'https://notx.com/a', 'https://example.com/']) {
-      expect(prefersJina(url), url).toBe(false);
-    }
+  it('ポストは短くても足切りしない', () => {
+    expect(fetchPlan('https://x.com/user/status/1')[0]).toEqual({ fetcher: 'twitter', minChars: 1 });
+  });
+
+  it('プロフィールやトレンドは取得しない', () => {
+    // 本文が無いので、取りに行っても「JavaScriptを有効に」しか返ってこない
+    expect(names('https://x.com/peing_tech')).toEqual([]);
+    expect(names('https://x.com/i/trending/2059406543393636372')).toEqual([]);
+  });
+
+  it('URLとして読めなければ取得しない', () => {
+    expect(names('not a url')).toEqual([]);
   });
 });
 
-describe('fetchArticleText', () => {
-  const deps = (direct?: string, viaJina?: string) => ({
-    direct: vi.fn().mockResolvedValue(direct),
-    viaJina: vi.fn().mockResolvedValue(viaJina),
+describe('fetchArticle', () => {
+  const content = (text: string, source = 'stub') => ({ text, source });
+  const fetchers = (
+    overrides: Partial<Record<keyof ArticleFetchers, string | undefined>> = {}
+  ): ArticleFetchers => ({
+    twitter: vi.fn().mockResolvedValue(overrides.twitter ? content(overrides.twitter) : undefined),
+    direct: vi.fn().mockResolvedValue(overrides.direct ? content(overrides.direct) : undefined),
+    jina: vi.fn().mockResolvedValue(overrides.jina ? content(overrides.jina) : undefined),
   });
+  const textOf = (outcome: ArticleOutcome) => (outcome.ok ? outcome.content.text : undefined);
 
   it('十分な長さが取れたら直接取得だけで済ませる', async () => {
-    const stubs = deps('あ'.repeat(500));
+    const stubs = fetchers({ direct: 'あ'.repeat(500) });
 
-    expect(await fetchArticleText('https://example.com/test', stubs)).toBe('あ'.repeat(500));
-    expect(stubs.viaJina).not.toHaveBeenCalled();
+    expect(textOf(await fetchArticle('https://example.com/test', stubs))).toBe('あ'.repeat(500));
+    expect(stubs.jina).not.toHaveBeenCalled();
   });
 
   it('直接取得に失敗したら r.jina.ai を使う', async () => {
-    const stubs = deps(undefined, 'r.jina.ai の本文');
+    const stubs = fetchers({ jina: 'r.jina.ai の本文' });
 
-    expect(await fetchArticleText('https://example.com/test', stubs)).toBe('r.jina.ai の本文');
-    expect(stubs.viaJina).toHaveBeenCalledWith('https://example.com/test');
+    expect(textOf(await fetchArticle('https://example.com/test', stubs))).toBe('r.jina.ai の本文');
+    expect(stubs.jina).toHaveBeenCalledWith('https://example.com/test');
   });
 
   it('直接取得が短すぎたら r.jina.ai を使う', async () => {
-    const stubs = deps('ログインしてください', 'r.jina.ai の本文');
+    const stubs = fetchers({ direct: '短い本文', jina: 'あ'.repeat(500) });
 
-    expect(await fetchArticleText('https://example.com/test', stubs)).toBe('r.jina.ai の本文');
+    expect(textOf(await fetchArticle('https://example.com/test', stubs))).toBe('あ'.repeat(500));
   });
 
-  it('r.jina.ai も失敗したら短い本文を使う', async () => {
-    const stubs = deps('短い本文', undefined);
+  it('どこも規定の長さに届かなければ、いちばん長い本文を使う', async () => {
+    const stubs = fetchers({ direct: '短い本文', jina: 'すこし長い本文' });
 
-    expect(await fetchArticleText('https://example.com/test', stubs)).toBe('短い本文');
+    expect(textOf(await fetchArticle('https://example.com/test', stubs))).toBe('すこし長い本文');
   });
 
-  it('Twitter は r.jina.ai を先に使う', async () => {
-    const stubs = deps(undefined, 'ツイート本文');
+  it('ログイン誘導やJavaScript案内は本文として採用しない', async () => {
+    // 200 で返ってくるので、弾かないと「Xの利用にはJavaScriptが必要」と要約される
+    const stubs = fetchers({
+      direct: `JavaScript is not available. ${'x'.repeat(500)}`,
+      jina: 'あ'.repeat(500),
+    });
 
-    expect(await fetchArticleText('https://x.com/user/status/123', stubs)).toBe('ツイート本文');
+    expect(textOf(await fetchArticle('https://example.com/test', stubs))).toBe('あ'.repeat(500));
+  });
+
+  it('すべて定型文なら理由を添えて失敗にする', async () => {
+    const stubs = fetchers({
+      direct: 'Just a moment...',
+      jina: 'Warning: Target URL returned error 404',
+    });
+    const outcome = await fetchArticle('https://example.com/test', stubs);
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok === false && outcome.reason).toContain('r.jina.ai が取得に失敗');
+  });
+
+  it('ポストは専用経路を先に使い、短くても採用する', async () => {
+    const stubs = fetchers({ twitter: '140字に満たないポスト本文' });
+
+    expect(textOf(await fetchArticle('https://x.com/user/status/123', stubs))).toBe(
+      '140字に満たないポスト本文'
+    );
+    expect(stubs.direct).not.toHaveBeenCalled();
+    expect(stubs.jina).not.toHaveBeenCalled();
+  });
+
+  it('ポストが取れなければ r.jina.ai と直接取得に落とす', async () => {
+    const stubs = fetchers({ jina: 'あ'.repeat(500) });
+
+    expect(textOf(await fetchArticle('https://x.com/user/status/123', stubs))).toBe('あ'.repeat(500));
+  });
+
+  it('本文のないURLは取得そのものを行わない', async () => {
+    const stubs = fetchers({ direct: 'あ'.repeat(500) });
+    const outcome = await fetchArticle('https://x.com/i/trending/123', stubs);
+
+    expect(outcome.ok).toBe(false);
+    expect(stubs.twitter).not.toHaveBeenCalled();
     expect(stubs.direct).not.toHaveBeenCalled();
   });
+});
 
-  it('Twitter でも r.jina.ai が空なら直接取得に落とす', async () => {
-    const stubs = deps('HTMLから取れた本文', undefined);
+describe('withResolvedTitle', () => {
+  const url = 'https://x.com/user/status/123';
 
-    expect(await fetchArticleText('https://x.com/user/status/123', stubs)).toBe('HTMLから取れた本文');
+  it('はてなのタイトルがURLのままなら差し替える', () => {
+    const resolved = withResolvedTitle(
+      { title: url, url },
+      { text: '本文', title: '@user のポスト: ほげ', source: 'twitter' }
+    );
+
+    expect(resolved.title).toBe('@user のポスト: ほげ');
+  });
+
+  it('タイトルがあるときは触らない', () => {
+    const resolved = withResolvedTitle(
+      { title: '記事のタイトル', url },
+      { text: '本文', title: '@user のポスト: ほげ', source: 'twitter' }
+    );
+
+    expect(resolved.title).toBe('記事のタイトル');
   });
 });
 
@@ -546,12 +654,18 @@ describe('writePost', () => {
 });
 
 describe('summarizeBookmarks', () => {
-  it('本文が取れないブックマークは飛ばす', async () => {
+  const found = (text: string, title?: string): ArticleOutcome => ({
+    ok: true,
+    content: title ? { text, title, source: 'stub' } : { text, source: 'stub' },
+  });
+  const missing = (reason: string): ArticleOutcome => ({ ok: false, reason });
+
+  it('本文が取れないブックマークは飛ばし、理由を残す', async () => {
     const summarize = vi.fn().mockResolvedValue(digest('要約。'));
-    const getArticleText = vi
+    const getArticle = vi
       .fn()
-      .mockResolvedValueOnce('本文あり')
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce(found('本文あり'))
+      .mockResolvedValueOnce(missing('direct: 本文が取れない'));
 
     const result = await summarizeBookmarks(
       [
@@ -559,11 +673,36 @@ describe('summarizeBookmarks', () => {
         { title: 'B', url: 'https://example.com/2' },
       ],
       { summarize },
-      { intervalMs: 0, getArticleText }
+      { intervalMs: 0, getArticle }
     );
 
-    expect(result.map(([bookmark]) => bookmark.title)).toEqual(['A']);
+    expect(result.digests.map(([bookmark]) => bookmark.title)).toEqual(['A']);
+    expect(result.skipped).toEqual([
+      { bookmark: { title: 'B', url: 'https://example.com/2' }, reason: 'direct: 本文が取れない' },
+    ]);
     expect(summarize).toHaveBeenCalledTimes(1);
+  });
+
+  it('要約に失敗したブックマークは記事に載せない', async () => {
+    // 「要約を生成できませんでした」だけの見出しは読む人にとって価値が無く、
+    // フロントマターは正常なので公開前ゲートでも気づけない
+    const summarize = vi.fn().mockResolvedValue(digest(SUMMARY_FALLBACK));
+    const getArticle = vi.fn().mockResolvedValue(found('本文あり'));
+
+    const result = await summarizeBookmarks([{ title: 'A', url: 'https://example.com/1' }], { summarize }, { intervalMs: 0, getArticle });
+
+    expect(result.digests).toEqual([]);
+    expect(result.skipped[0]!.reason).toBe('要約の生成に失敗');
+  });
+
+  it('取得経路がタイトルを持っていれば見出しに使う', async () => {
+    const summarize = vi.fn().mockResolvedValue(digest('要約。'));
+    const url = 'https://x.com/user/status/123';
+    const getArticle = vi.fn().mockResolvedValue(found('ポスト本文', '@user のポスト: ほげ'));
+
+    const result = await summarizeBookmarks([{ title: url, url }], { summarize }, { intervalMs: 0, getArticle });
+
+    expect(result.digests[0]![0].title).toBe('@user のポスト: ほげ');
   });
 });
 
@@ -577,9 +716,10 @@ describe('run', () => {
   const deps = (overrides: Record<string, unknown> = {}) => ({
     fetchEntries: vi.fn().mockResolvedValue(entries),
     selectBookmarks: vi.fn().mockReturnValue([bookmarkA]),
-    summarizeBookmarks: vi
-      .fn()
-      .mockResolvedValue([[bookmarkA, digest('要約。')]] as SummarizedBookmark[]),
+    summarizeBookmarks: vi.fn().mockResolvedValue({
+      digests: [[bookmarkA, digest('要約。')]] as SummarizedBookmark[],
+      skipped: [],
+    }),
     writePost: vi.fn().mockResolvedValue(true),
     createSummarizer: vi.fn().mockReturnValue({ summarize: vi.fn() }),
     ...overrides,
@@ -601,9 +741,10 @@ describe('run', () => {
 
   it('要約が全滅したら記事を書かずに中断する', async () => {
     const stubs = deps({
-      summarizeBookmarks: vi
-        .fn()
-        .mockResolvedValue([[bookmarkA, digest(SUMMARY_FALLBACK)]] as SummarizedBookmark[]),
+      summarizeBookmarks: vi.fn().mockResolvedValue({
+        digests: [],
+        skipped: [{ bookmark: bookmarkA, reason: '要約の生成に失敗' }],
+      }),
     });
 
     await expect(run({ targetDate: target, postsDir, deps: stubs })).rejects.toThrow(AbortRun);
@@ -614,10 +755,10 @@ describe('run', () => {
     const ng: Bookmark = { title: 'B', url: 'https://example.com/2' };
     const stubs = deps({
       selectBookmarks: vi.fn().mockReturnValue([bookmarkA, ng]),
-      summarizeBookmarks: vi.fn().mockResolvedValue([
-        [bookmarkA, digest('要約。')],
-        [ng, digest(SUMMARY_FALLBACK)],
-      ] as SummarizedBookmark[]),
+      summarizeBookmarks: vi.fn().mockResolvedValue({
+        digests: [[bookmarkA, digest('要約。')]] as SummarizedBookmark[],
+        skipped: [{ bookmark: ng, reason: '要約の生成に失敗' }],
+      }),
     });
 
     expect(await run({ targetDate: target, postsDir, deps: stubs })).toBe(1);
@@ -648,7 +789,13 @@ describe('run', () => {
       selectBookmarks: vi
         .fn()
         .mockReturnValue([bookmarkA, { title: 'B', url: 'https://example.com/2' }]),
-      summarizeBookmarks: vi.fn().mockResolvedValue([]),
+      summarizeBookmarks: vi.fn().mockResolvedValue({
+        digests: [],
+        skipped: [
+          { bookmark: bookmarkA, reason: 'direct: 本文が取れない' },
+          { bookmark: { title: 'B', url: 'https://example.com/2' }, reason: '本文のあるURLではない' },
+        ],
+      }),
     });
 
     await expect(run({ targetDate: target, postsDir, deps: stubs })).rejects.toThrow(AbortRun);

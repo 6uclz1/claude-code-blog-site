@@ -6,6 +6,15 @@
 
 import { load } from 'cheerio';
 
+/** 取得できた本文1件。取得経路によってはタイトルも分かる（Twitter/X など） */
+export interface ArticleContent {
+  text: string;
+  /** はてなのRSSのタイトルが使えないときの差し替え用 */
+  title?: string;
+  /** どの経路で取れたか（ログ用） */
+  source: string;
+}
+
 /** 本文が入っていそうな要素を優先順に試す */
 export const CONTENT_SELECTORS = [
   'article',
