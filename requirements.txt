@@ -1,6 +1,0 @@
-feedparser==6.0.12
-requests==2.34.2
-beautifulsoup4==4.15.0
-google-genai==2.14.0
-pytz==2026.3.post1
-PyYAML==6.0.3
