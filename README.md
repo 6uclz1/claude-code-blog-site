@@ -17,7 +17,8 @@ Astro で構築された日本語のブログサイトです。モダンなデ�
 
 ## 📋 必要な環境
 
-- Node.js 22以上（自動化スクリプトも TypeScript なので Node だけで動きます）
+- Node.js 24以上（自動化スクリプトも TypeScript なので Node だけで動きます）
+  CI と Docker は Node 24（Active LTS）を使います
 - Docker & Docker Compose（推奨）
 
 ## 🛠️ 環境構築
@@ -89,6 +90,27 @@ npm run validate -- --log build.log --feed dist/feed.xml --dist dist
 `--dist` を渡すと、`_posts/` の記事がすべてページとして出力されているかも検査します
 （feed.xml は最新20件しか載らないため、それより古い記事の消失はこの検査で捕まえます）。
 
+### 公開中のサイトの異常検知
+
+```bash
+npm run health-check
+```
+
+公開されている `feed.xml` を取りに行き、壊れていないか・最新記事が古すぎないかを確かめます。
+公開前の検証はビルドした結果しか見ないため、「cron が止まった」「実行は成功したのに記事が
+増えていない」といった静かな壊れ方はこちらでしか気づけません。
+`health-check.yml` が毎日 10:00 JST に実行し、異常があれば issue を立てます。
+
+### カバレッジ
+
+```bash
+npm run test:coverage
+npm run coverage-report -- --min-lines 85
+```
+
+プルリクエストでは `test.yml` が同じ内容をコメントとして貼り、行カバレッジが 85% を
+下回ると失敗させます。コメントは毎回作り直さず同じものを更新します。
+
 ### Docker関連
 
 ```bash
@@ -138,10 +160,15 @@ docker compose run --rm scripts npm test
 │   ├── fetch-and-summarize.ts
 │   ├── build-weekly-digest.ts
 │   ├── validate-build.ts
+│   ├── check-site-health.ts # 公開中のサイトの異常検知
+│   ├── coverage-report.ts   # カバレッジをPRコメント用のMarkdownにする
 │   ├── generate_og_image.mjs
 │   └── lib/                 # RSS・本文抽出・日付・front matter などの共通部品
 ├── tests/                   # scripts/ のユニットテスト（vitest）
-└── .github/workflows/       # CI/CD設定
+└── .github/
+    ├── workflows/           # CI/CD設定
+    ├── actions/             # ワークフローで共有する composite action
+    └── dependabot.yml       # Action と npm パッケージの更新
 ```
 
 ## 📝 記事の作成

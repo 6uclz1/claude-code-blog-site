@@ -1,26 +1,35 @@
 version: 2
 
 # 無人で毎日動くリポジトリなので、依存の更新漏れに気づけるようにする。
-# 特に requirements.txt は pin が古いまま放置され、SDKの仕様変更に
-# 気づけない状態になっていた。
+# Action は放置すると非推奨のまま動かなくなるので、月次より短い間隔で拾う。
+# （Python は TypeScript に移行済みなので pip の監視は外した）
 updates:
   - package-ecosystem: github-actions
+    # / を指定すると .github/workflows と .github/actions の両方を見る
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
     commit-message:
       prefix: 'ci'
-
-  - package-ecosystem: pip
-    directory: /
-    schedule:
-      interval: monthly
-    commit-message:
-      prefix: 'deps'
+    groups:
+      # 公式 Action はまとめて1本のPRにする。個別に来ても確認することは同じ
+      actions:
+        patterns:
+          - 'actions/*'
 
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
     commit-message:
       prefix: 'deps'
+    groups:
+      # パッチ/マイナーはまとめる。メジャーは壊れ方が読めないので個別に見る
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch

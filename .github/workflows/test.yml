@@ -7,6 +7,21 @@ on:
   # ここで走らせると同じ内容を二重にビルドすることになる
   workflow_dispatch:
 
+permissions:
+  contents: read
+  # カバレッジをプルリクにコメントするために必要
+  pull-requests: write
+
+# 同じPRに続けて push したとき、古い実行を走らせ続けても結果は捨てられる
+concurrency:
+  group: test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 下回ったらプルリクを失敗させる行カバレッジ。
+  # 現状(約89%)から少し余裕を持たせた値。上げるときはこの1行だけ直す
+  MIN_LINE_COVERAGE: '85'
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,16 +29,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+      # Node のセットアップは .github/actions/setup に集約している
+      - name: Setup
+        uses: ./.github/actions/setup
 
       - name: Type check
         run: npm run check
@@ -32,9 +42,75 @@ jobs:
       - name: Run tests with coverage
         run: npm run test:coverage
 
+      # しきい値割れでもコメントは出したいので、ここでは失敗させずに終了コードを持ち回る。
+      # 判定は最後の "Enforce coverage threshold" で行う
+      - name: Build coverage report
+        id: coverage
+        if: always()
+        run: |
+          set +e
+          npm run coverage-report -- \
+            --summary coverage/coverage-summary.json \
+            --out coverage-comment.md \
+            --min-lines "${MIN_LINE_COVERAGE}" \
+            --run-url "${RUN_URL}"
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          # フォークからのPRなどコメントできない場合でも数字が見えるようにする
+          if [ -f coverage-comment.md ]; then
+            cat coverage-comment.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      # フォークからのPRでは GITHUB_TOKEN が読み取り専用で、コメントすると失敗する
+      - name: Comment coverage on pull request
+        if: >-
+          always() &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          hashFiles('coverage-comment.md') != ''
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { readFile } = await import('node:fs/promises');
+            const body = await readFile('coverage-comment.md', 'utf8');
+            const marker = '<!-- coverage-report -->';
+
+            // 実行のたびに新しいコメントを足すと流れが埋まるので、目印で探して更新する
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      # 終了コード 1 がしきい値割れ。2 は「カバレッジを読めなかった」で、
+      # その場合はテスト自体が落ちているのでここで重ねて騒がない
+      - name: Enforce coverage threshold
+        if: always() && steps.coverage.outputs.exit_code == '1'
+        run: |
+          echo "::error::行カバレッジが ${MIN_LINE_COVERAGE}% を下回りました（詳細はPRのコメントを参照）"
+          exit 1
+
       - name: Build with Astro
         run: |
-          set -o pipefail
+          set -euo pipefail
           npm run build 2>&1 | tee build.log
 
       # ビルドが成功しても記事が壊れたままマージされることがあるため、
@@ -45,8 +121,26 @@ jobs:
 
       - name: Upload build log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: astro-build-log
           path: build.log
           if-no-files-found: ignore
+          retention-days: 14
+
+  # ワークフロー自体の壊れ（存在しないキー、式の書き間違い、shellcheck 相当の指摘）は
+  # 実行してみるまで気づけないので、静的に検査する
+  lint-workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Run actionlint
+        run: |
+          set -euo pipefail
+          docker run --rm -v "${PWD}:/repo" --workdir /repo \
+            rhysd/actionlint:1.7.12 -color

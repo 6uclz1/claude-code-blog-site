@@ -1,0 +1,55 @@
+# 無人運用なので、失敗に気づく手段は issue しかない。
+# 同じ内容の shell が4か所に写経されていたのでここにまとめた。
+#
+# 同じラベルの open な issue があれば新規に立てずコメントを足す。
+# 毎日失敗すると issue が積み上がって、どれが今の話か分からなくなるため。
+name: Report failure as issue
+description: 失敗を issue に記録する（同じラベルの open な issue があればコメントを追記）
+
+inputs:
+  title:
+    description: 新しく立てる issue のタイトル
+    required: true
+  body:
+    description: issue の本文
+    required: true
+  label:
+    description: issue のラベル。同じラベルの open な issue を探して再利用する
+    required: false
+    default: automation-failure
+  label-color:
+    description: ラベルを作るときの色
+    required: false
+    default: B60205
+  token:
+    description: 'gh が使うトークン（issues: write の権限が必要）'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Create or update issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        ISSUE_TITLE: ${{ inputs.title }}
+        ISSUE_BODY: ${{ inputs.body }}
+        ISSUE_LABEL: ${{ inputs.label }}
+        LABEL_COLOR: ${{ inputs.label-color }}
+      run: |
+        set -euo pipefail
+
+        # ラベルが無い状態で --label を渡すと gh が落ちるので、先に作っておく
+        gh label create "$ISSUE_LABEL" --color "$LABEL_COLOR" \
+          --description "自動化ワークフローの失敗" 2>/dev/null || true
+
+        existing=$(gh issue list --label "$ISSUE_LABEL" --state open --limit 1 \
+          --json number --jq '.[0].number // empty')
+
+        if [ -n "$existing" ]; then
+          gh issue comment "$existing" --body "$ISSUE_BODY"
+          echo "既存の issue #${existing} にコメントしました"
+        else
+          gh issue create --title "$ISSUE_TITLE" --label "$ISSUE_LABEL" --body "$ISSUE_BODY"
+        fi

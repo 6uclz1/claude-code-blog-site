@@ -36,6 +36,13 @@ npm test
 # Build and validate before publishing (公開前ゲートと同じ検証)
 npm run build 2>&1 | tee build.log
 npm run validate -- --log build.log --feed dist/feed.xml --dist dist
+
+# Render the coverage summary the way CI comments it on a pull request
+npm run test:coverage
+npm run coverage-report -- --min-lines 85
+
+# Check the *published* site (更新が止まっていないか)
+npm run health-check
 ```
 
 **Publishing gate**: broken front matter fails the build via the content collection
@@ -48,6 +55,14 @@ newest 20 entries, so anything older that stops being generated is invisible to 
 feed checks. The daily automation runs this gate *before*
 committing — nothing that fails validation is committed or published, and a failure
 opens an issue automatically.
+
+**Anomaly detection**: the publishing gate only sees a build that actually ran, so it
+cannot notice the ways this repo breaks *quietly* — the cron stops firing, a run goes
+green without producing a post, or Pages keeps serving a stale artifact. `health-check.yml`
+covers that gap: it runs daily (2h after the daily post) and `scripts/check-site-health.ts`
+fetches the **published** `feed.xml` to check that it parses, has no empty titles or
+duplicate URLs, and that the newest entry is not older than `--max-age-hours` (36h — 24h
+would false-alarm depending on when the run lands). A problem opens a `site-health` issue.
 
 ### Docker Development (Recommended)
 ```bash
@@ -132,12 +147,15 @@ docker compose run --rm scripts npm test
   - `scripts/build-weekly-digest.ts`: 日次記事7本を束ねる週刊まとめ（AIは呼ばない）
   - `scripts/generate_og_image.mjs`: OGP画像の生成（手動実行、結果をコミットする）
   - `scripts/validate-build.ts`: pre-publish gate over the build log and feed.xml
+  - `scripts/check-site-health.ts`: 公開中の feed.xml を外から検査する異常検知
+  - `scripts/coverage-report.ts`: vitest のカバレッジを Markdown 化（PRコメント用）
   - `scripts/lib/`: 共通部品。`date.ts`（JST固定オフセットの暦日）, `frontmatter.ts`
     （front matter の生成／分割。Astro と同じ js-yaml を使う）, `http.ts`（タイムアウト付き
     取得と charset 判定）, `rss.ts`（RSS 1.0/2.0・Atom を同じ形に正規化）,
     `article.ts`（cheerio による本文抽出）, `xml-node.ts`, `fs.ts`, `logger.ts`
   - `tests/`: vitest tests for the scripts (Gemini SDK と fetch はモックする)
-- **CI/CD**: `.github/workflows/` for automated deployment and content updates
+- **CI/CD**: `.github/workflows/` for automated deployment and content updates, plus
+  `.github/actions/` — the composite actions (`setup`, `report-failure`) the workflows share
 
 ### Key Features
 - **Pagination**: 10 posts per page with Japanese navigation ("前へ"/"次へ"); page 1 is
@@ -269,13 +287,37 @@ writing it — useful for checking the output length after a prompt change.
   Node setup runs the automation scripts, so no Python toolchain is installed in CI.
   `test.yml` runs on pull requests only — a push to `main` already gets the same build and
   publishing gate from `deploy.yml`, so keeping both would build every merge twice
-- **Node base image**: the Dockerfiles use `node:22-slim` rather than Alpine because the
+- **Shared composite actions**: every workflow starts with the same checkout + Node setup and
+  three of them report failures the same way, so those live in `.github/actions/setup` and
+  `.github/actions/report-failure`. Bumping Node or changing how failures are reported is a
+  one-file edit. `report-failure` comments on the existing open issue with the same label
+  instead of opening a new one — a daily failure would otherwise pile up issues
+- **Action versions**: `dependabot.yml` watches `github-actions` and `npm` weekly and groups
+  the `actions/*` bumps into one PR. `test.yml` also runs **actionlint** so a broken
+  workflow expression fails the PR instead of the next scheduled run
+- **Workflow failure reporting**: `report-deploy-failure` gates on
+  `needs.deploy.result == 'failure'`, not on a bare `failure()`. A bare `failure()` also
+  fires when the *build* job failed and `deploy` was skipped, which posted an issue claiming
+  the article had been committed when nothing was
+- **Node version**: Node 24 (Active LTS — 22 has dropped to Maintenance). It is set in two
+  places that must stay in sync: the `node-version` default in `.github/actions/setup`
+  (all of CI) and `node:24-slim` in `Dockerfile` / `Dockerfile.production`
+- **Node base image**: the Dockerfiles use `node:24-slim` rather than Alpine because the
   Pagefind binary that `npm ci` fetches is built against glibc
 - **Testing Isolation**: Tests run in containerized environment with mocked external dependencies
 
 ### Testing Strategy
 - **One test runner**: `npm test` (vitest) covers both `src/lib/*.test.ts` and `tests/*.test.ts`
   (the automation scripts). `npm run test:coverage` adds the coverage report
+- **Coverage on pull requests**: `test.yml` runs `test:coverage`, turns the
+  `coverage-summary.json` into Markdown with `scripts/coverage-report.ts`, and posts it as a
+  single sticky comment (found by the `<!-- coverage-report -->` marker and updated in place,
+  so re-pushing does not bury the PR). The same Markdown goes to the job summary, which is the
+  only place a fork PR can show it — a fork's `GITHUB_TOKEN` is read-only and commenting fails.
+  `MIN_LINE_COVERAGE` in `test.yml` (85%, against ~91% today) fails the PR when coverage drops;
+  the comment is posted first so the number is visible either way.
+  `src/lib/posts.ts` is excluded from the coverage config — it imports `astro:content` and can
+  never be tested, so counting it as 0% would make the total useless as a threshold
 - **Frontend Tests**: only modules that do not import `astro:content` can be tested this way,
   which is why the pure helpers live in `format.ts` / `bookmarks.ts` / `feed.ts` / `xml.ts`
   rather than in `posts.ts`

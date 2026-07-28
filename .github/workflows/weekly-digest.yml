@@ -30,22 +30,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+      # Node のセットアップは .github/actions/setup に集約している
+      - name: Setup
+        uses: ./.github/actions/setup
 
       # 要約は日次記事から流用するので、Gemini APIは呼ばない
       - name: Build weekly digest
+        env:
+          # 入力を直接コマンド行に展開しない（式の中身がそのまま shell に渡るのを避ける）
+          WEEK_ENDING: ${{ inputs.week_ending }}
         run: |
-          if [ -n "${{ inputs.week_ending }}" ]; then
-            npm run weekly-digest -- --week-ending "${{ inputs.week_ending }}"
+          set -euo pipefail
+          if [ -n "${WEEK_ENDING:-}" ]; then
+            npm run weekly-digest -- --week-ending "$WEEK_ENDING"
           else
             npm run weekly-digest
           fi
@@ -53,10 +52,11 @@ jobs:
       - name: Check for changes
         id: verify-changed-files
         run: |
+          set -euo pipefail
           if [ -n "$(git status --porcelain _posts/)" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
       # ここから公開前ゲート: 検証を通らなかったものはコミットしない
@@ -67,7 +67,7 @@ jobs:
       - name: Build Astro site
         if: steps.verify-changed-files.outputs.changed == 'true'
         run: |
-          set -o pipefail
+          set -euo pipefail
           npm run build 2>&1 | tee build.log
 
       - name: Validate build output
@@ -78,13 +78,14 @@ jobs:
 
       - name: Upload build output on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: failed-weekly-build
           path: |
             build.log
             _posts/
           if-no-files-found: ignore
+          retention-days: 14
 
       # 検証を通ったのでコミットして push する。
       # GITHUB_TOKEN による push は deploy.yml の push トリガーを起動しないので、
@@ -93,6 +94,7 @@ jobs:
         id: commit
         if: steps.verify-changed-files.outputs.changed == 'true'
         run: |
+          set -euo pipefail
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add _posts/
@@ -102,8 +104,8 @@ jobs:
           # rebase しながら数回まで再試行する
           for attempt in 1 2 3 4; do
             if git push origin HEAD:main; then
-              echo "pushed=true" >> $GITHUB_OUTPUT
-              echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+              echo "pushed=true" >> "$GITHUB_OUTPUT"
+              echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             echo "push に失敗しました (試行 ${attempt}/4)。rebase して再試行します"
@@ -116,27 +118,17 @@ jobs:
       # 無人運用なので、失敗したら気づけるように自動でissueを立てる
       - name: Report failure as issue
         if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          gh label create automation-failure --color B60205 \
-            --description "自動更新ワークフローの失敗" 2>/dev/null || true
+        uses: ./.github/actions/report-failure
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: 週刊まとめの生成が失敗しました
+          body: |
+            週刊まとめの生成が失敗しました。検証を通らなかったため、記事のコミットと公開は行われていません。
 
-          body="週刊まとめの生成が失敗しました。検証を通らなかったため、記事のコミットと公開は行われていません。
+            - 実行ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - 生成物は artifact `failed-weekly-build` に保存されています
 
-          - 実行ログ: ${RUN_URL}
-          - 生成物は artifact \`failed-weekly-build\` に保存されています
-
-          再実行する場合は Actions から \`Build Weekly Digest\` を workflow_dispatch してください。"
-
-          existing=$(gh issue list --label automation-failure --state open --limit 1 --json number --jq '.[0].number // empty')
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
-          else
-            gh issue create --title "週刊まとめの生成が失敗しました" \
-              --label automation-failure --body "$body"
-          fi
+            再実行する場合は Actions から `Build Weekly Digest` を workflow_dispatch してください。
 
   # push しただけでは公開されないので、ここから Pages へのデプロイを呼ぶ
   deploy:
@@ -150,32 +142,30 @@ jobs:
     with:
       ref: ${{ needs.weekly-digest.outputs.sha }}
 
-  # 記事はコミット済みなのに公開だけ落ちた状態に気づけるようにする
+  # 記事はコミット済みなのに公開だけ落ちた状態に気づけるようにする。
+  # deploy の結果を明示的に見る: 単なる failure() では、weekly-digest が落ちて deploy が
+  # スキップされたときにも動いてしまい、「コミットは成功した」という誤った issue が立つ
   report-deploy-failure:
-    needs: deploy
-    if: failure()
+    needs: [weekly-digest, deploy]
+    if: always() && needs.weekly-digest.outputs.pushed == 'true' && needs.deploy.result == 'failure'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
+      contents: read
       issues: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
       - name: Report failure as issue
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          gh label create automation-failure --color B60205 \
-            --description "自動更新ワークフローの失敗" 2>/dev/null || true
+        uses: ./.github/actions/report-failure
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: 週刊まとめの公開に失敗しました
+          body: |
+            週刊まとめのコミットは成功しましたが、GitHub Pages への公開に失敗しました。
 
-          body="週刊まとめのコミットは成功しましたが、GitHub Pages への公開に失敗しました。
+            - 対象コミット: ${{ needs.weekly-digest.outputs.sha }}
+            - 実行ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-          - 実行ログ: ${RUN_URL}
-
-          再実行する場合は Actions から \`Deploy Astro site to Pages\` を workflow_dispatch してください。"
-
-          existing=$(gh issue list --label automation-failure --state open --limit 1 --json number --jq '.[0].number // empty')
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
-          else
-            gh issue create --title "週刊まとめの公開に失敗しました" \
-              --label automation-failure --body "$body"
-          fi
+            再実行する場合は Actions から `Deploy Astro site to Pages` を workflow_dispatch してください。
