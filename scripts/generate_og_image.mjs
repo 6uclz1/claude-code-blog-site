@@ -29,7 +29,7 @@ const HEIGHT = 630;
 const BG = '#09090b';
 const FG = '#f4f4f1';
 
-const TITLE = 'Blog';
+const TITLE = 'Bookmark Digest';
 const SUBTITLE = '6uclz1.github.io/claude-code-blog-site';
 
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
@@ -52,8 +52,8 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${
   <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#glowBottomRight)" />
   <rect x="620" y="0" width="580" height="${HEIGHT}" fill="url(#dots)" />
 
-  <text x="96" y="316" font-family="DejaVu Sans" font-size="112" font-weight="300"
-        letter-spacing="12" fill="${FG}">${TITLE}</text>
+  <text x="96" y="316" font-family="DejaVu Sans" font-size="72" font-weight="300"
+        letter-spacing="8" fill="${FG}">${TITLE}</text>
   <text x="100" y="382" font-family="DejaVu Sans" font-size="26" font-weight="300"
         letter-spacing="3" fill="${FG}" fill-opacity="0.62">${SUBTITLE}</text>
 
