@@ -24,16 +24,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+      # Node のセットアップは .github/actions/setup に集約している
+      - name: Setup
+        uses: ./.github/actions/setup
 
       - name: Run fetch and summarize script
         env:
@@ -45,10 +40,11 @@ jobs:
       - name: Check for changes
         id: verify-changed-files
         run: |
+          set -euo pipefail
           if [ -n "$(git status --porcelain _posts/)" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
       # ここから公開前ゲート: 検証を通らなかったものはコミットしない
@@ -59,7 +55,7 @@ jobs:
       - name: Build Astro site
         if: steps.verify-changed-files.outputs.changed == 'true'
         run: |
-          set -o pipefail
+          set -euo pipefail
           npm run build 2>&1 | tee build.log
 
       # ビルドが成功しても記事が壊れたまま公開されることがあるため、
@@ -72,13 +68,14 @@ jobs:
 
       - name: Upload build output on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: failed-build
           path: |
             build.log
             _posts/
           if-no-files-found: ignore
+          retention-days: 14
 
       # 検証を通ったのでコミットして push する。
       # 公開はこの後の deploy ジョブ（deploy.yml の呼び出し）に任せる。
@@ -88,6 +85,7 @@ jobs:
         id: commit
         if: steps.verify-changed-files.outputs.changed == 'true'
         run: |
+          set -euo pipefail
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add _posts/
@@ -97,8 +95,8 @@ jobs:
           # rebase しながら数回まで再試行する
           for attempt in 1 2 3 4; do
             if git push origin HEAD:main; then
-              echo "pushed=true" >> $GITHUB_OUTPUT
-              echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+              echo "pushed=true" >> "$GITHUB_OUTPUT"
+              echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             echo "push に失敗しました (試行 ${attempt}/4)。rebase して再試行します"
@@ -111,27 +109,17 @@ jobs:
       # 無人運用なので、失敗したら気づけるように自動でissueを立てる
       - name: Report failure as issue
         if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          gh label create automation-failure --color B60205 \
-            --description "自動更新ワークフローの失敗" 2>/dev/null || true
+        uses: ./.github/actions/report-failure
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: 自動更新ワークフローが失敗しました
+          body: |
+            自動更新ワークフローが失敗しました。検証を通らなかったため、記事のコミットと公開は行われていません。
 
-          body="自動更新ワークフローが失敗しました。検証を通らなかったため、記事のコミットと公開は行われていません。
+            - 実行ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - 生成物は artifact `failed-build` に保存されています
 
-          - 実行ログ: ${RUN_URL}
-          - 生成物は artifact \`failed-build\` に保存されています
-
-          再実行する場合は Actions から \`Update Blog with Hatena Bookmarks\` を workflow_dispatch してください。"
-
-          existing=$(gh issue list --label automation-failure --state open --limit 1 --json number --jq '.[0].number // empty')
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
-          else
-            gh issue create --title "自動更新ワークフローが失敗しました" \
-              --label automation-failure --body "$body"
-          fi
+            再実行する場合は Actions から `Update Blog with Hatena Bookmarks` を workflow_dispatch してください。
 
   # push しただけでは公開されないので、ここから Pages へのデプロイを呼ぶ。
   # deploy.yml 側の push トリガーはこの push では起動しない
@@ -146,32 +134,30 @@ jobs:
     with:
       ref: ${{ needs.update-blog.outputs.sha }}
 
-  # 記事はコミット済みなのに公開だけ落ちた状態に気づけるようにする
+  # 記事はコミット済みなのに公開だけ落ちた状態に気づけるようにする。
+  # deploy の結果を明示的に見る: 単なる failure() では、update-blog が落ちて deploy が
+  # スキップされたときにも動いてしまい、「コミットは成功した」という誤った issue が立つ
   report-deploy-failure:
-    needs: deploy
-    if: failure()
+    needs: [update-blog, deploy]
+    if: always() && needs.update-blog.outputs.pushed == 'true' && needs.deploy.result == 'failure'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
+      contents: read
       issues: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
       - name: Report failure as issue
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          gh label create automation-failure --color B60205 \
-            --description "自動更新ワークフローの失敗" 2>/dev/null || true
+        uses: ./.github/actions/report-failure
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: 自動更新した記事の公開に失敗しました
+          body: |
+            自動生成した記事のコミットは成功しましたが、GitHub Pages への公開に失敗しました。main には記事があるのにサイトに出ていない状態です。
 
-          body="自動生成した記事のコミットは成功しましたが、GitHub Pages への公開に失敗しました。main には記事があるのにサイトに出ていない状態です。
+            - 対象コミット: ${{ needs.update-blog.outputs.sha }}
+            - 実行ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-          - 実行ログ: ${RUN_URL}
-
-          再実行する場合は Actions から \`Deploy Astro site to Pages\` を workflow_dispatch してください。"
-
-          existing=$(gh issue list --label automation-failure --state open --limit 1 --json number --jq '.[0].number // empty')
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
-          else
-            gh issue create --title "自動更新した記事の公開に失敗しました" \
-              --label automation-failure --body "$body"
-          fi
+            再実行する場合は Actions から `Deploy Astro site to Pages` を workflow_dispatch してください。

@@ -16,7 +16,9 @@
     "astro": "astro",
     "summarize": "tsx scripts/fetch-and-summarize.ts",
     "weekly-digest": "tsx scripts/build-weekly-digest.ts",
-    "validate": "tsx scripts/validate-build.ts"
+    "validate": "tsx scripts/validate-build.ts",
+    "coverage-report": "tsx scripts/coverage-report.ts",
+    "health-check": "tsx scripts/check-site-health.ts"
   },
   "dependencies": {
     "@google/genai": "^2.13.0",

@@ -1,0 +1,87 @@
+# 公開中のサイトの異常検知。
+#
+# 既存のワークフローは「実行されたときに失敗したら気づく」形なので、
+# cron が止まった・ブックマークが0件で毎日空振りしている・デプロイが古い成果物を
+# 出し続けている、といった「何も起きない」壊れ方には気づけない。
+# ここでは実際に公開されている feed.xml を外から見て、更新が止まっていないかを確かめる。
+name: Site Health Check
+
+on:
+  # 日次記事は 8:00 JST に作られる。その2時間後に確認する
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      max_age_hours:
+        description: '最新記事の許容される古さ（時間）'
+        required: false
+        default: '36'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: health-check
+  cancel-in-progress: false
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Check published site
+        id: check
+        env:
+          FEED_URL: https://6uclz1.github.io/claude-code-blog-site/feed.xml
+          MAX_AGE_HOURS: ${{ inputs.max_age_hours || '36' }}
+        run: |
+          set -euo pipefail
+          # --silent で npm 自身のエラー出力を抑える。
+          # そうしないとスクリプトの指摘が npm ERR! に埋もれて issue に載らない
+          npm run --silent health-check -- \
+            --feed "$FEED_URL" \
+            --max-age-hours "$MAX_AGE_HOURS" \
+            --min-entries 1 2>&1 | tee health-check.log
+
+      - name: Read check output
+        if: failure()
+        id: output
+        run: |
+          set -euo pipefail
+          {
+            echo 'log<<HEALTH_EOF'
+            tail -n 40 health-check.log 2>/dev/null || echo '(出力なし)'
+            echo 'HEALTH_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # 更新が止まっているのは自動化の失敗と同じなので、同じラベルにまとめる
+      - name: Report as issue
+        if: failure()
+        uses: ./.github/actions/report-failure
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: 公開中のサイトに異常があります
+          label: site-health
+          label-color: D93F0B
+          body: |
+            公開されている feed.xml の検査に失敗しました。ワークフローは緑のまま
+            更新が止まっている可能性があります。
+
+            ```
+            ${{ steps.output.outputs.log }}
+            ```
+
+            - 実行ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            確認する順番:
+            1. `Update Blog with Hatena Bookmarks` の直近の実行が成功しているか
+            2. 成功しているのに記事が増えていないなら、はてなブックマークが0件だった可能性
+            3. `_posts/` に記事があるのにサイトに出ていないなら `Deploy Astro site to Pages` を再実行
