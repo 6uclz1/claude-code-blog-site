@@ -170,10 +170,16 @@ a {
 .post-page__header h1 {
   margin: 0;
   color: var(--fg);
-  font-size: 1.72rem;
+  /*
+   * 幅に合わせて縮めることで、タイトルが1行に収まる画面幅を広げている
+   * （狭い画面では 1.15rem で止まり、そこから先は折り返す）。
+   */
+  font-size: clamp(1.15rem, 2.9vw, 1.72rem);
   font-weight: var(--text-weight);
   letter-spacing: var(--title-letter-spacing);
   line-height: 1.4;
+  /* 折り返すしかない幅でも、末尾の1文字だけが次の行に落ちないようにする */
+  text-wrap: balance;
 }
 
 .eyebrow,
@@ -272,15 +278,25 @@ a {
 }
 
 /* Single post */
+/*
+ * 記事全体は --content-max まで広げ、読み物としての行長は本文とナビだけを
+ * --copy-max に絞って保つ。タイトル（記事まとめの見出し）は日付や件数まで
+ * 入って長いので、--copy-max のままだと必ず2行に折り返してしまう。
+ */
 .post-page {
   display: grid;
   gap: 1.8rem;
-  max-width: var(--copy-max);
+  max-width: var(--content-max);
 }
 
 .post-page__header {
   display: grid;
   gap: 0.92rem;
+}
+
+.post-body,
+.post-nav {
+  max-width: var(--copy-max);
 }
 
 .post-page__meta {
@@ -697,6 +713,12 @@ a {
 .empty-state {
   width: fit-content;
   max-width: 100%;
+  /*
+   * width: fit-content と border-box を組み合わせると、下の padding
+   * （ホバーの塗りしろ）が内容の幅から差し引かれ、収まるはずのタイトルでも
+   * 最後の1文字が次の行に落ちる。padding を外側に付けて実幅を保つ。
+   */
+  box-sizing: content-box;
   margin: -0.16rem -0.28rem;
   background-image: var(--hover-shape), var(--hover-surface);
   background-position:
@@ -772,8 +794,8 @@ a {
     padding-block: 6rem 4rem;
   }
 
-  .page-heading h1,
-  .post-page__header h1 {
+  /* 記事タイトルは clamp() で幅に追従させるので、ここでは固定しない */
+  .page-heading h1 {
     font-size: 1.48rem;
   }
 
