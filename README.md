@@ -243,8 +243,12 @@ GitHub Pagesを使用した自動デプロイが設定されています：
 3. `scripts/validate_build.py` による公開前検証
 4. GitHub Pagesへの自動デプロイ
 
-自動更新ワークフロー（`update-blog.yml`）は記事をコミットして push するところまでを担当し、
-公開はその push を受けた `deploy.yml` が行います（Pages への同時デプロイを避けるため）。
+自動更新ワークフロー（`update-blog.yml` / `weekly-digest.yml`）は記事をコミットして push した
+あと、`deploy.yml` を再利用ワークフロー（`workflow_call`）として呼び出して公開します。
+デプロイを行うのは `deploy.yml` だけです（Pages への同時デプロイを避けるため）。
+
+`GITHUB_TOKEN` による push は他のワークフローを起動しない仕様なので、`deploy.yml` の push
+トリガーは自動生成された記事では発火しません。そのため呼び出しは省略できません。
 
 ## 🎨 カスタマイズ
 

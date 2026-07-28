@@ -242,10 +242,15 @@ between stages:
    of them — both the current `## [title](url)` form and the legacy `## 1. title` +
    `**URL:**` form that every existing post uses — and writes one look-back post. It never
    calls Gemini: the summaries already exist in the daily posts
-6. **Deployment**: `update-blog.yml` commits and pushes the post; the push triggers
-   `deploy.yml`, which builds with Astro, runs the publishing gate, and deploys to GitHub
-   Pages. Only `deploy.yml` deploys — deploying from both races on the `github-pages`
-   environment
+6. **Deployment**: `update-blog.yml` commits and pushes the post, then calls `deploy.yml`
+   as a reusable workflow (`workflow_call`) with the pushed commit as `ref`. `deploy.yml`
+   builds with Astro, runs the publishing gate, and deploys to GitHub Pages, and it is the
+   only place that deploys — deploying from two workflows races on the `github-pages`
+   environment. The call is not optional: a push made with `GITHUB_TOKEN` never triggers
+   another workflow (GitHub's recursion guard), so `deploy.yml`'s `push` trigger does not
+   fire for automated posts and the article would sit on `main` unpublished.
+   `weekly-digest.yml` does the same. A deploy that fails after the commit landed opens an
+   issue from the `report-deploy-failure` job
 
 **Post length is a product decision**: the daily digest is meant to be skimmed in the morning, so
 the summary length limits live in the script (`SUMMARY_MAX_CHARS`, `POINT_MAX_CHARS`, `MAX_POINTS`)
