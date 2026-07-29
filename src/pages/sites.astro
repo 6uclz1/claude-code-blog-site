@@ -62,7 +62,11 @@ const description = `これまでにブックマークした${total}件を、サ
       {
         shown.map((stat) => (
           <div class="host-row">
-            <span class="host-row__count">{stat.count}</span>
+            {/* 数字だけだと「12」としか読み上げられず、何の数か分からない */}
+            <span class="host-row__count">
+              {stat.count}
+              <span class="visually-hidden">件</span>
+            </span>
             <div class="host-row__body">
               <span class="host-row__name">{stat.host}</span>
               <a

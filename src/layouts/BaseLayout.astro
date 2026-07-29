@@ -109,9 +109,19 @@ const ogImage = absolute(withBase(SITE.ogImage));
     }
   </head>
   <body>
+    <!--
+      キーボードだけで読む人が、記事一覧の行を全部たどらずに本文へ入れるようにする。
+      フォーカスが当たったときだけ画面に現れる（.skip-link）。
+    -->
+    <a class="skip-link" href="#main-content">本文へスキップ</a>
     <Header />
 
-    <main class="site-main">
+    <!--
+      tabindex="-1" はスキップリンクの飛び先として必要。
+      これが無いと、ブラウザによってはフォーカスが body に残ったまま
+      スクロールだけして、続きの Tab がページ先頭に戻ってしまう。
+    -->
+    <main class="site-main" id="main-content" tabindex="-1">
       <slot />
     </main>
 

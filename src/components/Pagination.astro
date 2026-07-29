@@ -26,7 +26,11 @@ const items = numbers.flatMap((num, i) =>
 {
   totalPages > 1 && (
     <nav class="pagination" aria-label="ページ送り">
-      {currentPage > 1 && <a href={pagePath(currentPage - 1)}>← 前へ</a>}
+      {currentPage > 1 && (
+        <a href={pagePath(currentPage - 1)} rel="prev">
+          <span aria-hidden="true">←&nbsp;</span>前へ
+        </a>
+      )}
 
       {items.map((num) =>
         num === null ? (
@@ -34,16 +38,24 @@ const items = numbers.flatMap((num, i) =>
             …
           </span>
         ) : num === currentPage ? (
-          <span class="current" aria-current="page">
+          /*
+           * 数字だけのリンクは読み上げると「2」としか聞こえず、何の2なのか
+           * 分からないので、リンク名は aria-label で補う。
+           */
+          <span class="current" aria-current="page" aria-label={`${num}ページ目（現在のページ）`}>
             {num}
           </span>
         ) : (
-          <a href={pagePath(num)}>{num}</a>
+          <a href={pagePath(num)} aria-label={`${num}ページ目`}>
+            {num}
+          </a>
         )
       )}
 
       {currentPage < totalPages && (
-        <a href={pagePath(currentPage + 1)}>次へ →</a>
+        <a href={pagePath(currentPage + 1)} rel="next">
+          次へ<span aria-hidden="true">&nbsp;→</span>
+        </a>
       )}
     </nav>
   )

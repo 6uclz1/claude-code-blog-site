@@ -7,10 +7,18 @@
 
   --bg: #09090b;
   --fg: #f4f4f1;
-  --muted: rgba(244, 244, 241, 0.64);
-  --faint: rgba(244, 244, 241, 0.42);
-  --line: rgba(244, 244, 241, 0.14);
-  --panel: rgba(255, 255, 255, 0.05);
+  /*
+   * 本文・補助テキストの明度は WCAG 2.1 の 1.4.3 (AA) を満たす値に固定している。
+   * --bg (#09090b) に対するコントラスト比は fg 18.6:1 / muted 11.5:1 / faint 6.3:1 で、
+   * いちばん薄い --faint でも小さい文字の基準 4.5:1 を上回る。薄くする方向に
+   * 触るときは必ず比率を再計算すること（見た目の「馴染み」だけで下げない）。
+   */
+  --muted: rgba(244, 244, 241, 0.8);
+  --faint: rgba(244, 244, 241, 0.58);
+  /* 区切り線は非テキストなので 3:1 (1.4.11) を目安にする */
+  --line: rgba(244, 244, 241, 0.24);
+  --panel: rgba(255, 255, 255, 0.07);
+  --focus-ring: #f4f4f1;
 
   --bg-rgb: 9 9 11;
   --fg-rgb: 244 244 241;
@@ -27,7 +35,11 @@
     sans-serif;
   --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 
-  --text-weight: 300;
+  /*
+   * 暗い背景に細い字を置くと線が痩せて読みにくくなるため、本文は 400 まで上げる。
+   * デザイン上の「軽さ」は見出しの字間（--title-letter-spacing）と余白で作る。
+   */
+  --text-weight: 400;
   --brand-letter-spacing: 0.14em;
   --brand-hover-trailing-space: 0.44rem;
   --title-letter-spacing: 0.08em;
@@ -58,6 +70,15 @@ html,
 body {
   margin: 0;
   min-height: 100%;
+}
+
+/*
+ * ヘッダーが position: fixed なので、ページ内リンク（#y2026 など）で飛んだ先が
+ * ヘッダーの下に潜り込む。個々の見出しに scroll-margin-top を足して回るより、
+ * ここでまとめて逃がす。
+ */
+html {
+  scroll-padding-top: 7rem;
 }
 
 body {
@@ -106,6 +127,53 @@ a {
   color: inherit;
   text-decoration-thickness: 0.08em;
   text-underline-offset: 0.24em;
+}
+
+/*
+ * キーボード操作の現在地は、色や下線だけでなく必ず輪郭で示す（WCAG 2.4.7 / 2.4.11）。
+ * 個々のコンポーネントで outline: none にしないこと — ホバー用の塗りは
+ * マウス前提の表現で、フォーカス位置の代わりにはならない。
+ */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+/* 目には見せず、スクリーンリーダーには読ませる補足テキスト */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/*
+ * 本文へのスキップリンク。フォーカスが当たったときだけ左上に現れる。
+ * 記事一覧は行数が多く、キーボードだけで本文に入るのが遠いため。
+ */
+.skip-link {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  transform: translateY(-120%);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  padding: 0.7rem 1.1rem;
+  color: var(--fg);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* 目的地に飛んだだけで枠が出るのは邪魔なので、プログラム的な焦点は囲まない */
+.site-main:focus {
+  outline: none;
 }
 
 .site-header,
@@ -186,7 +254,7 @@ a {
 .post-page__meta,
 .post-row__date {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.86rem;
   font-weight: var(--text-weight);
   letter-spacing: 0.14em;
   line-height: 1.35;
@@ -233,7 +301,7 @@ a {
 
 .post-row__title {
   color: inherit;
-  font-size: 1rem;
+  font-size: 1.06rem;
   font-weight: var(--text-weight);
   letter-spacing: var(--title-letter-spacing);
   line-height: 1.5;
@@ -243,7 +311,7 @@ a {
   display: grid;
   gap: 0.5rem;
   color: var(--faint);
-  font-size: 0.84rem;
+  font-size: 0.92rem;
   letter-spacing: 0.02em;
   line-height: 1.8;
   overflow-wrap: anywhere;
@@ -260,17 +328,19 @@ a {
   padding-left: 1.4rem;
 }
 
+/*
+ * 抜粋の中のリンクは常に下線を引く。周囲の文字（--faint）との差が色だけだと、
+ * 色を知覚しにくい環境ではリンクだと分からない（WCAG 1.4.1）。
+ */
 .post-row__excerpt a {
   color: var(--muted);
-  text-decoration: none;
+  text-decoration: underline;
   transition: color 240ms ease;
 }
 
 .post-row__excerpt a:hover,
 .post-row__excerpt a:focus-visible {
   color: var(--fg);
-  outline: none;
-  text-decoration: underline;
 }
 
 .empty-state {
@@ -310,7 +380,7 @@ a {
   display: grid;
   gap: 1.1rem;
   color: var(--muted);
-  font-size: 0.92rem;
+  font-size: 1rem;
   letter-spacing: 0.02em;
   line-height: 1.9;
   overflow-wrap: anywhere;
@@ -320,26 +390,30 @@ a {
   margin: 0;
 }
 
+/*
+ * 本文が 1rem になったぶん、見出しはサイズと太さの両方で差を付ける。
+ * 見出しかどうかが目で分からないと、見た目に頼る読者だけが構造を失う。
+ */
 .post-body h2,
 .post-body h3,
 .post-body h4 {
-  margin-top: 1rem;
+  margin-top: 1.6rem;
   color: var(--fg);
-  font-weight: var(--text-weight);
+  font-weight: 500;
   letter-spacing: 0.08em;
   line-height: 1.5;
 }
 
 .post-body h2 {
-  font-size: 1.12rem;
+  font-size: 1.3rem;
 }
 
 .post-body h3 {
-  font-size: 1rem;
+  font-size: 1.14rem;
 }
 
 .post-body h4 {
-  font-size: 0.94rem;
+  font-size: 1.02rem;
 }
 
 .post-body ul,
@@ -373,7 +447,7 @@ a {
   overflow-x: auto;
   border: 1px solid var(--line);
   padding: 1rem 1.1rem;
-  font-size: 0.84rem;
+  font-size: 0.9rem;
   line-height: 1.7;
 }
 
@@ -438,12 +512,12 @@ a {
 
 .post-nav__label {
   color: var(--faint);
-  font-size: 0.74rem;
+  font-size: 0.8rem;
   letter-spacing: 0.14em;
 }
 
 .post-nav__title {
-  font-size: 0.86rem;
+  font-size: 0.94rem;
   letter-spacing: 0.02em;
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -452,7 +526,6 @@ a {
 .post-nav__sibling:hover,
 .post-nav__sibling:focus-visible {
   color: var(--fg);
-  outline: none;
 }
 
 .post-nav__sibling:hover .post-nav__title,
@@ -470,20 +543,26 @@ a {
   padding-top: 1.4rem;
 }
 
+/*
+ * 補助リンクは行の中で押せる範囲が細くなりがちなので、上下に余白を入れて
+ * 24px 四方（WCAG 2.5.8）を下回らないようにする。
+ */
 .site-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.86rem;
   letter-spacing: 0.14em;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
   transition: color 240ms ease;
 }
 
 .site-nav a:hover,
 .site-nav a:focus-visible {
   color: var(--fg);
-  outline: none;
-  text-decoration: underline;
-  text-underline-offset: 0.24em;
+  text-decoration-color: currentColor;
 }
 
 /* Archive */
@@ -494,19 +573,21 @@ a {
 }
 
 .archive-jump a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.86rem;
   letter-spacing: 0.14em;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
   transition: color 240ms ease;
 }
 
 .archive-jump a:hover,
 .archive-jump a:focus-visible {
   color: var(--fg);
-  outline: none;
-  text-decoration: underline;
-  text-underline-offset: 0.24em;
+  text-decoration-color: currentColor;
 }
 
 .archive-year {
@@ -529,7 +610,7 @@ a {
 
 .archive-year__count {
   color: var(--faint);
-  font-size: 0.74rem;
+  font-size: 0.8rem;
   letter-spacing: 0.14em;
 }
 
@@ -552,13 +633,13 @@ a {
 
 .archive-row__date {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.86rem;
   letter-spacing: 0.14em;
 }
 
 .archive-row__link {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.96rem;
   letter-spacing: 0.02em;
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -569,7 +650,6 @@ a {
 .archive-row__link:hover,
 .archive-row__link:focus-visible {
   color: var(--fg);
-  outline: none;
   text-decoration: underline;
   text-underline-offset: 0.24em;
 }
@@ -594,7 +674,7 @@ a {
 
 .host-row__count {
   color: var(--fg);
-  font-size: 0.9rem;
+  font-size: 0.96rem;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.08em;
   text-align: right;
@@ -608,27 +688,26 @@ a {
 
 .host-row__name {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.96rem;
   letter-spacing: 0.04em;
   overflow-wrap: anywhere;
 }
 
 .host-row__latest {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   letter-spacing: 0.02em;
   line-height: 1.6;
   overflow-wrap: anywhere;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
   transition: color 240ms ease;
 }
 
 .host-row__latest:hover,
 .host-row__latest:focus-visible {
   color: var(--fg);
-  outline: none;
-  text-decoration: underline;
-  text-underline-offset: 0.24em;
+  text-decoration-color: currentColor;
 }
 
 /* 検索（Pagefind のUIをサイトの配色に合わせる） */
@@ -644,9 +723,21 @@ a {
   --pagefind-ui-font: var(--font-sans);
 }
 
+.search-ui__wrap {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.search-ui__label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  letter-spacing: 0.14em;
+}
+
 .post-nav__back {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: var(--text-weight);
   justify-self: start;
   letter-spacing: 0.08em;
@@ -663,10 +754,19 @@ a {
   gap: 0.5rem 0.9rem;
 }
 
+/*
+ * ページ番号は文字が短く、そのままだと押せる範囲が数ミリしかない。
+ * 上下に余白を足して 24px 四方（WCAG 2.5.8）を確保する。
+ */
 .pagination a,
 .pagination span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: var(--text-weight);
   letter-spacing: 0.08em;
   line-height: 1.45;
@@ -674,8 +774,11 @@ a {
   transition: color 240ms ease;
 }
 
+/* 現在のページは色だけでなく下線でも示す（1.4.1） */
 .pagination .current {
   color: var(--fg);
+  text-decoration: underline;
+  text-underline-offset: 0.3em;
 }
 
 .pagination__gap {
@@ -690,7 +793,7 @@ a {
   justify-items: end;
   padding: 0 var(--content-inline) 1.6rem;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.84rem;
   font-weight: var(--text-weight);
   letter-spacing: 0.08em;
   line-height: 1.35;
@@ -772,11 +875,13 @@ a {
   color: var(--hover-text);
 }
 
-.site-header__brand:focus-visible,
-.post-row__link:focus-visible,
-.post-nav__back:focus-visible,
-.pagination a:focus-visible {
-  outline: none;
+/*
+ * 塗りが流れ込むホバー表現はマウス前提なので、キーボードのときは
+ * 塗りに加えて輪郭も出す（:focus-visible の共通ルールに任せる）。
+ * ここで outline を消してはいけない。
+ */
+.post-row__link:focus-visible {
+  outline-offset: 1px;
 }
 
 /* Responsive */
@@ -825,13 +930,50 @@ a {
   }
 }
 
+/*
+ * アニメーションを減らす設定のときは、要素を列挙せず全部止める。
+ * ホバーの塗りは 900ms かけて流れ込むので、取りこぼすと目立つ。
+ */
 @media (prefers-reduced-motion: reduce) {
-  .site-header__brand,
-  .post-row__link,
-  .post-row__title,
-  .post-nav__back,
-  .pagination a,
-  .pagination span {
-    transition: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* コントラストを上げる設定では、薄いトーンと飾りを引っ込める */
+@media (prefers-contrast: more) {
+  :root {
+    --muted: rgba(244, 244, 241, 0.92);
+    --faint: rgba(244, 244, 241, 0.78);
+    --line: rgba(244, 244, 241, 0.45);
+  }
+
+  body::before {
+    display: none;
+  }
+}
+
+/*
+ * Windows のハイコントラストモードでは配色がOS側に置き換わる。
+ * 背景画像で作っているホバーの塗りは消えてしまうので、輪郭で代替する。
+ */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid CanvasText;
+  }
+
+  body::before {
+    display: none;
+  }
+
+  .post-row,
+  .archive-row,
+  .host-row {
+    border-bottom-color: CanvasText;
   }
 }
