@@ -186,7 +186,10 @@ describe('parseArgs', () => {
 
 describe('main', () => {
   it('正常なら 0 を返す', async () => {
-    vi.stubGlobal('fetch', async () => okResponse(feed(entry()), 'application/xml'));
+    // main() は options を受け取らず実時刻で判定するため、記事の日時も実時刻から
+    // 作る。固定の NOW を使うと、その時刻から36時間経った日にこのテストが落ちる。
+    const fresh = entry({ updated: new Date(Date.now() - 6 * HOUR).toISOString() });
+    vi.stubGlobal('fetch', async () => okResponse(feed(fresh), 'application/xml'));
     vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 
     expect(await main(['--feed', 'https://example.com/feed.xml'])).toBe(0);

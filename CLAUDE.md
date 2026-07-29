@@ -223,6 +223,17 @@ on `:root` (`--bg` / `--fg` / `--muted` / `--line` / `--panel`, plus the `--cont
   the text color (`--hover-shape` / `--hover-surface`); disabled under
   `prefers-reduced-motion`
 - **Responsive**: single breakpoint at 720px; the post rows collapse to one column
+- **Accessibility**: the palette is fixed to values that clear WCAG 2.1 AA — against
+  `--bg` the contrast is fg 18.6:1 / `--muted` 11.5:1 / `--faint` 6.3:1, and `--line`
+  clears the 3:1 non-text bar. Lowering any alpha means recomputing the ratio; the
+  "muted" look is what made the old page hard to read. Body copy is 1rem at
+  `--text-weight: 400` (light weights thin out on a dark background). `:focus-visible`
+  draws one outline for the whole site — the hover sweep is a mouse affordance and no
+  component may `outline: none` on top of it. Every page starts with a skip link to
+  `#main-content`; post titles in the index are `<h2>` so the list is navigable by
+  heading. `prefers-reduced-motion` kills every transition (the sweep runs 900ms),
+  and `prefers-contrast: more` / `forced-colors` drop the dot texture.
+  `/search/` labels Pagefind's input itself — the Default UI ships only a `title`
 
 ## Automation Architecture
 

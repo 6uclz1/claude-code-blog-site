@@ -22,12 +22,20 @@ const pagefindJs = withBase('/pagefind/pagefind-ui.js');
     </div>
 
     <link rel="stylesheet" href={pagefindCss} />
-    <div id="search" class="search-ui">
-      <noscript>
-        <p class="empty-state">
-          検索にはJavaScriptが必要です。アーカイブから探してください。
-        </p>
-      </noscript>
+    {/*
+      Pagefind の Default UI は入力欄に title しか付けないため、支援技術には
+      ラベルの無いフォーム部品として見える。見えるラベルをこちらで置き、
+      初期化後に aria-labelledby で結びつける（下のスクリプト）。
+    */}
+    <div class="search-ui__wrap" role="search">
+      <p class="search-ui__label" id="search-label">記事を検索</p>
+      <div id="search" class="search-ui">
+        <noscript>
+          <p class="empty-state">
+            検索にはJavaScriptが必要です。アーカイブから探してください。
+          </p>
+        </noscript>
+      </div>
     </div>
 
     <nav class="post-nav" aria-label="記事ナビゲーション">
@@ -47,6 +55,14 @@ const pagefindJs = withBase('/pagefind/pagefind-ui.js');
         '<p class="empty-state">検索インデックスが見つかりません（本番ビルドでのみ利用できます）。</p>';
       return;
     }
+    // 入力欄は PagefindUI が組み立てるので、生成された後にラベルを結びつける。
+    const labelInput = () => {
+      const input = document.querySelector('#search input[type="text"]');
+      if (!input) return false;
+      input.setAttribute('aria-labelledby', 'search-label');
+      return true;
+    };
+
     new PagefindUI({
       element: '#search',
       showSubResults: true,
@@ -68,5 +84,16 @@ const pagefindJs = withBase('/pagefind/pagefind-ui.js');
         searching: '[SEARCH_TERM] を検索中…',
       },
     });
+
+    // 同期的に組み上がるのが普通だが、間に合わなければ現れるまで待つ
+    if (!labelInput()) {
+      const observer = new MutationObserver(() => {
+        if (labelInput()) observer.disconnect();
+      });
+      observer.observe(document.getElementById('search'), {
+        childList: true,
+        subtree: true,
+      });
+    }
   });
 </script>

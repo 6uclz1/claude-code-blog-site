@@ -22,8 +22,13 @@ const { posts } = Astro.props;
             </time>
           </span>
           <div class="post-row__body">
+            {/*
+              記事タイトルは見出しにする。span のままだと、見出しジャンプで
+              一覧を読む人にとって記事の切れ目が存在しないことになる。
+              ページの h1 はサイト名なので、ここは h2。
+            */}
             <a class="post-row__link" href={postUrl(post)}>
-              <span class="post-row__title">{post.data.title}</span>
+              <h2 class="post-row__title">{post.data.title}</h2>
             </a>
             {post.data.excerpt && (
               <div
