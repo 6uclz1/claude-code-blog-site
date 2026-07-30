@@ -35,6 +35,7 @@ import {
 import { buildFrontMatter, splitFrontMatter } from './lib/frontmatter.ts';
 import { fileExists } from './lib/fs.ts';
 import { describeError, logger } from './lib/logger.ts';
+import { markdownLink } from './lib/markdown.ts';
 
 export const POSTS_DIR = '_posts';
 
@@ -151,7 +152,9 @@ export function renderPost(digests: DailyDigest[], end: CivilDate): string {
   for (const digest of digests) {
     const block = [`## ${formatJapaneseDate(digest.day)} (${digest.bookmarks.length}件)`, ''];
     for (const bookmark of digest.bookmarks) {
-      block.push(bookmark.url ? `- [${bookmark.title}](${bookmark.url})` : `- ${bookmark.title}`);
+      block.push(
+        bookmark.url ? `- ${markdownLink(bookmark.title, bookmark.url)}` : `- ${bookmark.title}`
+      );
     }
     sections.push(block.join('\n'));
   }

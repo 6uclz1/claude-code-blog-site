@@ -576,6 +576,34 @@ describe('renderPost', () => {
     expect(body).toContain('- 点B');
   });
 
+  it('タイトルがURLのままなら日本語が読める形にする', () => {
+    // 元記事のタイトルが取れなかったブックマークは、はてなのRSSが返す
+    // パーセントエンコードされたURLがそのままタイトルになる
+    const encoded: SummarizedBookmark[] = [
+      [
+        {
+          title: 'https://example.com/%E7%99%BB%E5%A3%87%E8%B3%87%E6%96%99.pdf',
+          url: 'https://example.com/%E7%99%BB%E5%A3%87%E8%B3%87%E6%96%99.pdf',
+        },
+        digest('資料の要約。'),
+      ],
+    ];
+
+    expect(bodyOf(renderPost(encoded, target))).toContain(
+      '## [https://example.com/登壇資料.pdf](https://example.com/%E7%99%BB%E5%A3%87%E8%B3%87%E6%96%99.pdf)'
+    );
+  });
+
+  it('閉じない括弧を含むURLでもリンクが壊れない', () => {
+    const tricky: SummarizedBookmark[] = [
+      [{ title: 'キャンペーン', url: 'https://example.com/a?ct=t(EMAIL' }, digest('要約。')],
+    ];
+
+    expect(bodyOf(renderPost(tricky, target))).toContain(
+      '## [キャンペーン](<https://example.com/a?ct=t(EMAIL>)'
+    );
+  });
+
   it('朝にパラッと読める分量に収まっている', () => {
     const body = bodyOf(renderPost(digests, target));
 

@@ -23,7 +23,7 @@ excerpt: "はてなブックマークで気になった記事をAIで要約し�
 はてなブックマークで気になった記事をAIで要約してお届けします。
 2025年11月17日分の7件の記事をまとめました。
 
-## 1. https://2025.agilejapan.jp/wp-content/uploads/2025/11/1114_1300-1320_MSOL_AgileJapan2025_%E7%99%BB%E5%A3%87%E8%B3%87%E6%96%99_%E6%8F%90%E5%87%BA%E7%89%88.pdf
+## 1. https://2025.agilejapan.jp/wp-content/uploads/2025/11/1114_1300-1320_MSOL_AgileJapan2025_登壇資料_提出版.pdf
 
 **URL:** [https://2025.agilejapan.jp/wp-content/uploads/2025/11/1114_1300-1320_MSOL_AgileJapan2025_%E7%99%BB%E5%A3%87%E8%B3%87%E6%96%99_%E6%8F%90%E5%87%BA%E7%89%88.pdf](https://2025.agilejapan.jp/wp-content/uploads/2025/11/1114_1300-1320_MSOL_AgileJapan2025_%E7%99%BB%E5%A3%87%E8%B3%87%E6%96%99_%E6%8F%90%E5%87%BA%E7%89%88.pdf)
 
