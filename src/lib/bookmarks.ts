@@ -6,29 +6,47 @@
  * 生成時期によって書式が違うため、常に本文から拾う方が揃う。
  */
 
+import { displayTitle } from './url';
+
 export interface BookmarkRef {
   title: string;
   /** 旧形式（`## 1. タイトル`）にはURLが無いため任意 */
   url?: string;
 }
 
+// リンクの宛先。`<...>` で囲む形（括弧や空白を含むURL）と裸の形の両方を受ける。
+// 裸の形は貪欲に読んで行末の `)` までを宛先とし、URLの中の対応の取れた括弧
+// （例: `.../wiki/地方病_(日本住血吸虫症)`）が途中で切れないようにする。
+const DESTINATION = '(?:<(https?:\\/\\/[^>]+)>|(https?:\\/\\/.+))';
+
 // 記事内の `## 要点` `## 詳細な要約` のようなセクション見出しを拾わないよう、
 // リンク形式か採番形式のみを対象にする。
 const HEADING_PATTERNS: { pattern: RegExp; hasUrl: boolean }[] = [
   // 現在の形式: ## [タイトル](https://example.com/)
-  { pattern: /^##\s+\[(.+)\]\((https?:\/\/[^)]+)\)\s*$/, hasUrl: true },
+  { pattern: new RegExp(`^##\\s+\\[(.+)\\]\\(${DESTINATION}\\)\\s*$`), hasUrl: true },
   // 旧形式: ## 1. タイトル
   { pattern: /^##\s+\d+\.\s+(.+?)\s*$/, hasUrl: false },
 ];
 
 // 旧形式は見出しにURLを持たず、直後の本文に `**URL:** [...](...)` の行を置いている。
 // 既存記事はすべてこの形式なので、見出しの後に続くこの行からURLを補う。
-const URL_LINE_PATTERN = /^\*\*URL:\*\*\s*\[[^\]]*\]\((https?:\/\/[^)]+)\)/;
+const URL_LINE_PATTERN = new RegExp(
+  `^\\*\\*URL:\\*\\*\\s*\\[[^\\]]*\\]\\(${DESTINATION}\\)\\s*$`
+);
+
+/** 正規表現のどちらの宛先グループに入ったかを見て、URLを取り出す */
+const destinationOf = (match: RegExpExecArray, first: number) =>
+  match[first] ?? match[first + 1];
 
 const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
 
-/** 強調記法やバッククォートは一覧では読みにくいので落とす */
-const cleanTitle = (raw: string) => collapse(raw.replace(/[*_`]/g, ''));
+/**
+ * 強調記法やバッククォートは一覧では読みにくいので落とし、
+ * タイトルがURLのままのもの（元記事のタイトルが取れなかったブックマーク）は
+ * パーセントエンコードを解いて日本語が読めるようにする。
+ */
+const cleanTitle = (raw: string) =>
+  displayTitle(collapse(raw.replace(/[*_`]/g, '').replace(/\\([\\[\]])/g, '$1')));
 
 /** 記事本文からブックマークを出現順に取り出す */
 export function extractBookmarks(body: string): BookmarkRef[] {
@@ -47,7 +65,7 @@ export function extractBookmarks(body: string): BookmarkRef[] {
       const title = cleanTitle(match[1]!);
       if (title) {
         const bookmark: BookmarkRef = hasUrl
-          ? { title, url: match[2] }
+          ? { title, url: destinationOf(match, 2) }
           : { title };
         bookmarks.push(bookmark);
         pending = bookmark;
@@ -60,7 +78,7 @@ export function extractBookmarks(body: string): BookmarkRef[] {
 
     if (pending && !pending.url) {
       const urlMatch = URL_LINE_PATTERN.exec(line);
-      if (urlMatch) pending.url = urlMatch[1];
+      if (urlMatch) pending.url = destinationOf(urlMatch, 1);
     }
   }
 

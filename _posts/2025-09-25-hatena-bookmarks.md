@@ -38,7 +38,7 @@ DevOpsDays Tokyo 2025では、249名の参加者、36のセッション、43名�
 
 ## 2. Qiita Conference 2025 Autumn（キータ カンファレンス 2025 オータム） - Qiita
 
-**URL:** [https://qiita.com/official-campaigns/conference/2025-autumn?utm_source=Qiita+%E3%83%8B%E3%83%A5%E3%83%BC%E3%82%B9&utm_campaign=0debef982e-EMAIL_CAMPAIGN_2025_09_25&utm_medium=email&utm_term=0_e44feaa081-0debef982e-64544897&ct=t(EMAIL_CAMPAIGN_2025_09_25](https://qiita.com/official-campaigns/conference/2025-autumn?utm_source=Qiita+%E3%83%8B%E3%83%A5%E3%83%BC%E3%82%B9&utm_campaign=0debef982e-EMAIL_CAMPAIGN_2025_09_25&utm_medium=email&utm_term=0_e44feaa081-0debef982e-64544897&ct=t(EMAIL_CAMPAIGN_2025_09_25)
+**URL:** [https://qiita.com/official-campaigns/conference/2025-autumn?utm_source=Qiita+%E3%83%8B%E3%83%A5%E3%83%BC%E3%82%B9&utm_campaign=0debef982e-EMAIL_CAMPAIGN_2025_09_25&utm_medium=email&utm_term=0_e44feaa081-0debef982e-64544897&ct=t(EMAIL_CAMPAIGN_2025_09_25](<https://qiita.com/official-campaigns/conference/2025-autumn?utm_source=Qiita+%E3%83%8B%E3%83%A5%E3%83%BC%E3%82%B9&utm_campaign=0debef982e-EMAIL_CAMPAIGN_2025_09_25&utm_medium=email&utm_term=0_e44feaa081-0debef982e-64544897&ct=t(EMAIL_CAMPAIGN_2025_09_25>)
 
 ### AI要約
 

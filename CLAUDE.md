@@ -135,6 +135,10 @@ docker compose run --rm scripts npm test
     `posts.ts` から再エクスポートしているので import 元は変わらない
   - `src/lib/bookmarks.ts`: 本文からブックマーク見出しを抽出（feed と `/sites/` が共用）
   - `src/lib/feed.ts` / `src/lib/xml.ts`: フィードの summary 生成と XML エスケープ
+  - `src/lib/url.ts`: 表示用のURL整形（パーセントエンコードのデコード）。はてなのRSSは
+    元記事のタイトルが無いブックマークのタイトルをURLのまま返し、そのURLの日本語は
+    `%E7%99%BB%E5%A3%87...` のままなので、見出し・一覧・フィードに出す前にここで戻す。
+    リンク先のURL自体は書き換えない
   - `src/lib/*.test.ts`: vitest（`npm test`）。astro を読まないモジュールだけが対象
   - `src/layouts/`: `BaseLayout.astro`, `PostLayout.astro`
   - `src/components/`: `Header`, `Footer`, `PostList`, `Pagination`,
@@ -157,8 +161,9 @@ docker compose run --rm scripts npm test
     正規化）, `article.ts`（cheerio による本文抽出）, `boilerplate.ts`（ログイン誘導や
     ボット判定ページを本文と取り違えないための判定）, `sources/twitter.ts`（x.com の
     ポスト取得）, `summary.ts`（GitHub Actions のジョブサマリ）, `abort.ts`（`AbortRun`）,
-    `xml-node.ts`, `fs.ts`, `logger.ts`。日次記事の見出しの読み取りは
-    `src/lib/bookmarks.ts` を直接 import する（フィードや `/sites/` と同じ実装を使う）
+    `markdown.ts`（壊れないMarkdownリンクの組み立て）, `xml-node.ts`, `fs.ts`, `logger.ts`。
+    日次記事の見出しの読み取りは `src/lib/bookmarks.ts` を、表示用のタイトル整形は
+    `src/lib/url.ts` を直接 import する（フィードや `/sites/` と同じ実装を使う）
   - `tests/`: vitest tests for the scripts (Gemini SDK と fetch はモックする)
 - **CI/CD**: `.github/workflows/` for automated deployment and content updates, plus
   `.github/actions/` — the composite actions (`setup`, `report-failure`) the workflows share
@@ -290,7 +295,14 @@ take injectable `direct` / `viaJina`) — ESM の export は差し替えられ�
    `permalink` are all derived from the bookmark date (`postDateStamp()` pins the time to
    09:00 JST = 00:00 UTC),
    never from the run time — otherwise a manual run outside the cron window shifts the
-   displayed date, which is rendered in UTC, one day away from the permalink
+   displayed date, which is rendered in UTC, one day away from the permalink.
+   見出しのリンクは `scripts/lib/markdown.ts` の `markdownLink()` で組み立てる:
+   タイトルの `[` `]` をエスケープし、閉じない括弧や空白を含むURL（例:
+   `...&ct=t(EMAIL_CAMPAIGN`）は `<...>` で囲む。裸のまま書くと CommonMark が
+   リンクとして読めず、記事にURLの文字列がそのまま出る。URL自体は
+   パーセントエンコードし直さない（別のURLになりうるため）。
+   タイトルがURLのままのブックマークは `displayTitle()` でデコードしてから見出しにする。
+   `tests/posts-integrity.test.ts` が `_posts/` 全体のリンク宛先を検査して再発を止める
 5. **Weekly digest**: `build-weekly-digest.ts` (run by `weekly-digest.yml` every Monday
    09:30 JST) reads the last 7 daily posts from `_posts/`, pulls the bookmark headings out
    of them — both the current `## [title](url)` form and the legacy `## 1. title` +

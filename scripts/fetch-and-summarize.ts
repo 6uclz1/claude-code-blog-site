@@ -35,6 +35,7 @@ import { buildFrontMatter } from './lib/frontmatter.ts';
 import { fileExists } from './lib/fs.ts';
 import { decodeBody, fetchBytes, fetchText, isTextLike, USER_AGENT } from './lib/http.ts';
 import { describeError, logger } from './lib/logger.ts';
+import { markdownLink } from './lib/markdown.ts';
 import { parseFeed, type FeedEntry } from './lib/rss.ts';
 import {
   fetchTweet,
@@ -44,6 +45,8 @@ import {
   tweetTitle,
 } from './lib/sources/twitter.ts';
 import { appendJobSummary } from './lib/summary.ts';
+// 表示用のタイトル整形はサイト側（フィード・/sites/）と同じ実装を使う
+import { displayTitle } from '../src/lib/url.ts';
 
 export const RSS_URL = 'https://b.hatena.ne.jp/Buchi_6uclz1/rss';
 export const GEMINI_MODEL = 'gemini-2.5-flash';
@@ -410,7 +413,8 @@ export function buildPrompt(bookmark: Bookmark, articleText: string): string {
     summary_max: String(SUMMARY_MAX_CHARS),
     point_max: String(POINT_MAX_CHARS),
     max_points: String(MAX_POINTS),
-    title: bookmark.title,
+    // パーセントエンコードのままのタイトルは Gemini にも読めないので戻す
+    title: displayTitle(bookmark.title),
     url: bookmark.url,
     content: articleText,
   };
@@ -567,7 +571,13 @@ export function renderPost(digests: SummarizedBookmark[], target: CivilDate): st
   // 本文の導入文は置かない。タイトルに日付と件数が入っており、
   // 一覧やフィードには excerpt が出るので、記事側で繰り返すと読む量が増えるだけ。
   const sections = digests.map(([bookmark, entry]) => {
-    const block = [`## [${bookmark.title}](${bookmark.url})`, '', entry.summary];
+    // タイトルがURLのまま（元記事のタイトルが取れなかった）ときは
+    // パーセントエンコードを解いて、見出しの日本語が読める形にする
+    const block = [
+      `## ${markdownLink(displayTitle(bookmark.title), bookmark.url)}`,
+      '',
+      entry.summary,
+    ];
     if (entry.points.length > 0) {
       block.push('');
       block.push(...entry.points.map((point) => `- ${point}`));
@@ -717,8 +727,11 @@ async function reportSkipped(skipped: SkippedBookmark[], total: number): Promise
     logger.warn(`  - ${bookmark.url}: ${reason}`);
   }
 
+  // `|` を含むタイトルは表の列を割ってしまうのでエスケープする
+  const cell = (text: string) => displayTitle(text).replace(/\|/g, '\\|');
   const rows = skipped.map(
-    ({ bookmark, reason }) => `| ${bookmark.title || '(タイトルなし)'} | ${bookmark.url} | ${reason} |`
+    ({ bookmark, reason }) =>
+      `| ${bookmark.title ? cell(bookmark.title) : '(タイトルなし)'} | ${bookmark.url} | ${reason} |`
   );
   await appendJobSummary(
     [

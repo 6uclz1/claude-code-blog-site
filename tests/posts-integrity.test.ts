@@ -144,3 +144,67 @@ describe('_posts', () => {
     expect(failures, `日付の不一致:\n${failures.join('\n')}`).toEqual([]);
   });
 });
+
+describe('_posts の本文', () => {
+  it('Markdownリンクの宛先が壊れていない', async () => {
+    // 閉じない `(` や空白を含むURLを裸で書くと CommonMark がリンクとして読めず、
+    // 記事にURLの文字列がそのまま出る。生成側(scripts/lib/markdown.ts)は
+    // そうしたURLを `<...>` で囲むが、過去記事も含めて崩れていないことを見張る。
+    const failures: string[] = [];
+
+    for (const { name, body } of await readPostBodies()) {
+      body.split('\n').forEach((line, index) => {
+        for (const destination of linkDestinations(line)) {
+          if (destination.broken) {
+            failures.push(`${name}:${index + 1}: リンクの宛先が読めない: ${destination.text}`);
+          }
+        }
+      });
+    }
+
+    expect(failures, `壊れたリンク:\n${failures.join('\n')}`).toEqual([]);
+  });
+});
+
+async function readPostBodies(): Promise<{ name: string; body: string }[]> {
+  const names = (await readdir(POSTS_DIR)).filter((name) => name.endsWith('.md')).sort();
+
+  return Promise.all(
+    names.map(async (name) => {
+      const raw = await readFile(path.join(POSTS_DIR, name), 'utf-8');
+      return { name, body: splitFrontMatter(raw).body };
+    })
+  );
+}
+
+/**
+ * 行の中の `](...)` を CommonMark と同じ読み方で拾う。
+ * 宛先は対応の取れた括弧までで、閉じない括弧や空白があるとリンクにならない。
+ */
+function linkDestinations(line: string): { text: string; broken: boolean }[] {
+  const found: { text: string; broken: boolean }[] = [];
+  const pattern = /\]\(\s*(<[^>]*>|[^\s]*)/g;
+
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(line))) {
+    const raw = match[1]!;
+    // `<...>` で囲まれていれば中身は何でもよい
+    if (raw.startsWith('<')) continue;
+
+    let depth = 0;
+    let closed = false;
+    for (const char of raw) {
+      if (char === '(') depth += 1;
+      else if (char === ')') {
+        if (depth === 0) {
+          closed = true;
+          break;
+        }
+        depth -= 1;
+      }
+    }
+    if (!closed || depth > 0) found.push({ text: raw.slice(0, 120), broken: true });
+  }
+
+  return found;
+}

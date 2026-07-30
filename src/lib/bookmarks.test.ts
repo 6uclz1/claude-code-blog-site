@@ -63,6 +63,26 @@ describe('extractBookmarks', () => {
     expect(extractBookmarkTitles(body)).toEqual(['useState を 読み解く']);
   });
 
+  it('タイトルがURLのままの見出しはデコードして読める形にする', () => {
+    // 元記事のタイトルが取れなかったブックマークは、はてなのRSSが返すURLが
+    // そのままタイトルになる。パーセントエンコードのままだと日本語が読めない
+    const body =
+      '## 1. https://example.com/%E7%99%BB%E5%A3%87%E8%B3%87%E6%96%99.pdf';
+    expect(extractBookmarkTitles(body)).toEqual(['https://example.com/登壇資料.pdf']);
+  });
+
+  it('URLに括弧が含まれていても最後まで取り出す', () => {
+    const url = 'https://ja.wikipedia.org/wiki/%E5%9C%B0%E6%96%B9%E7%97%85_(%E6%97%A5%E6%9C%AC)';
+    const body = ['## 1. 地方病', '', `**URL:** [地方病](${url})`].join('\n');
+    expect(extractBookmarks(body)).toEqual([{ title: '地方病', url }]);
+  });
+
+  it('<> で囲まれた宛先からもURLを取り出す', () => {
+    const url = 'https://example.com/a?ct=t(EMAIL';
+    const body = ['## 1. キャンペーン', '', `**URL:** [リンク](<${url}>)`].join('\n');
+    expect(extractBookmarks(body)).toEqual([{ title: 'キャンペーン', url }]);
+  });
+
   it('見出しが無い本文では空になる', () => {
     expect(extractBookmarkTitles('ただの段落です。\n\n- 箇条書き')).toEqual([]);
   });
