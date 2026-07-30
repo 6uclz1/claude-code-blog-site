@@ -252,7 +252,14 @@ take injectable `direct` / `viaJina`) — ESM の export は差し替えられ�
 1. **RSS Processing**: `fetchEntries()` + `selectBookmarks()` — the feed is fetched with a
    timeout and parsed by `scripts/lib/rss.ts` (fast-xml-parser), then every date an entry
    carries (`dc:date`, entry-id URL pattern, `pubDate`/`published`) is collected and the ones
-   matching the target day are kept, de-duplicating by URL
+   matching the target day are kept, de-duplicating by URL.
+   はてなはタイトルの日本語を `&#x30B3;` のような文字参照で返すことがあり、
+   fast-xml-parser は既定では `&amp;` など5つしか解かないので `htmlEntities: true` を
+   付け、さらに `decodeNumericEntities()` で残り（配信側が二重にエスケープした分）を
+   戻してから使う。名前付き実体は解かない（`AT&amp;T` のような正当なタイトルを壊さない）。
+   記事ページはブラウザが文字参照を解くので一見正常に見え、フィードと `/sites/` にだけ
+   `&amp;#x30B3;` が出るという気づきにくい壊れ方をする — `tests/posts-integrity.test.ts`
+   が `_posts/` の見出しを検査して再発を止める
 2. **Content Extraction**: `fetchPlan(url)` decides *which* fetchers to try and in what
    order, and `fetchArticle()` runs that plan. Adding a host-specific way of fetching means
    adding an entry to `ArticleFetchers` and a line to `fetchPlan()` — nothing else changes.
