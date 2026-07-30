@@ -164,6 +164,23 @@ describe('_posts の本文', () => {
 
     expect(failures, `壊れたリンク:\n${failures.join('\n')}`).toEqual([]);
   });
+
+  it('見出しに文字参照が残っていない', async () => {
+    // はてなのRSSはタイトルの日本語を `&#x30B3;` のような文字参照で返すことがある。
+    // 記事ページはブラウザが解いて日本語に見えるが、フィードと /sites/ では
+    // エスケープされて `&amp;#x30B3;` の文字列がそのまま読者に出る
+    const failures: string[] = [];
+
+    for (const { name, body } of await readPostBodies()) {
+      body.split('\n').forEach((line, index) => {
+        if (!line.startsWith('## ')) return;
+        const found = line.match(/&#(?:x[0-9A-Fa-f]{1,6}|\d{1,7});/g);
+        if (found) failures.push(`${name}:${index + 1}: 文字参照が残っている: ${found[0]}`);
+      });
+    }
+
+    expect(failures, `未デコードの文字参照:\n${failures.join('\n')}`).toEqual([]);
+  });
 });
 
 async function readPostBodies(): Promise<{ name: string; body: string }[]> {

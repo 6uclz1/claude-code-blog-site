@@ -28,7 +28,35 @@ const parser = new XMLParser({
   parseTagValue: false,
   parseAttributeValue: false,
   trimValues: true,
+  // はてなのRSSはタイトルの日本語を `&#x30B3;` のような文字参照で返すことがある。
+  // 既定では `&amp;` などの5つしか解かず、文字参照はそのまま残るため、
+  // 記事の見出しやフィードに `&#x30B3;` の文字列が出てしまう
+  htmlEntities: true,
 });
+
+/**
+ * 残った数値文字参照（`&#x30B3;` / `&#12467;`）を文字に戻す。
+ *
+ * 配信側が `&amp;#x30B3;` のように二重にエスケープしていると、XMLとしての
+ * デコードを終えた時点で文字参照の文字列が残る。名前付き実体（`&amp;` など）は
+ * ここでは解かない — 「AT&amp;T」のような正当なタイトルを壊さないため、
+ * 対象は数値文字参照だけにする。
+ */
+export function decodeNumericEntities(text: string): string {
+  return text.replace(/&#(x[0-9A-Fa-f]{1,6}|\d{1,7});/g, (raw, code: string) => {
+    const value = code[0] === 'x' || code[0] === 'X'
+      ? Number.parseInt(code.slice(1), 16)
+      : Number.parseInt(code, 10);
+    // 制御文字や範囲外は元の表記のまま残す
+    if (!Number.isFinite(value) || value > 0x10ffff) return raw;
+    if (value < 0x20 || (value >= 0x7f && value <= 0x9f)) return raw;
+    try {
+      return String.fromCodePoint(value);
+    } catch {
+      return raw;
+    }
+  });
+}
 
 /** Atom の link は `<link href="..."/>`、それ以外は要素のテキスト */
 function linkOf(value: unknown): string {
@@ -57,7 +85,7 @@ function toEntry(item: XmlNode): FeedEntry {
     undefined;
 
   return {
-    title: textOf(item['title']),
+    title: decodeNumericEntities(textOf(item['title'])),
     link: linkOf(item['link']),
     dcDate: textOf(item['dc:date']) || undefined,
     id,
