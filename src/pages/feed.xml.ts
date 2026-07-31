@@ -1,5 +1,4 @@
 import type { APIRoute } from 'astro';
-import { feedSummaryLines } from '../lib/feed';
 import {
   getSortedPosts,
   permalinkToParam,
@@ -10,15 +9,14 @@ import { escapeHtmlText, escapeXml } from '../lib/xml';
 import { SITE } from '../site';
 
 // jekyll-feed と同じ Atom 形式で出力する。
-// 既存の購読者と公開前ゲート(scripts/validate_build.py)がこの形式を前提にしている。
+// 既存の購読者と公開前ゲート(scripts/validate-build.ts)がこの形式を前提にしている。
+//
+// entry には summary を入れない。Slack の RSS 連携は summary を本文として出したうえで
+// リンクを展開して OGP の説明文も出すため、両方に中身があると同じ内容が二重に並ぶ。
+// 記事の中身は OGP 側（src/lib/share.ts）だけで伝える。
 
 const absoluteUrl = (site: URL, path: string) =>
   new URL(path.replace(/^\/+/, ''), site).href;
-
-// Slack などHTMLを落として表示するクライアントでも行が潰れないよう、
-// <br /> と実際の改行の両方を入れる。<br /> はタグとして効かせたいのでXMLのみエスケープ。
-const summaryHtml = (lines: string[]) =>
-  lines.map(escapeHtmlText).join('&lt;br /&gt;\n');
 
 export const GET: APIRoute = async ({ site }) => {
   if (!site) throw new Error('astro.config.mjs の site が設定されていません');
@@ -41,18 +39,13 @@ export const GET: APIRoute = async ({ site }) => {
   const entry = (post: Post) => {
     const url = absoluteUrl(baseUrl, `${permalinkToParam(post.data.permalink)}/`);
     const published = post.data.date.toISOString();
-    const summary = feedSummaryLines(post.body ?? '', post.data.excerpt);
     return `  <entry>
     <title type="html">${escapeHtmlText(post.data.title)}</title>
     <link href="${escapeXml(url)}" rel="alternate" type="text/html" title="${escapeXml(post.data.title)}"/>
     <published>${published}</published>
     <updated>${postUpdated(post).toISOString()}</updated>
     <id>${escapeXml(url)}</id>
-    <author><name>${escapeXml(SITE.author)}</name></author>${
-      summary.length
-        ? `\n    <summary type="html">${summaryHtml(summary)}</summary>`
-        : ''
-    }
+    <author><name>${escapeXml(SITE.author)}</name></author>
   </entry>`;
   };
 
