@@ -8,6 +8,13 @@ import '../styles/global.css';
 interface Props {
   title?: string;
   description?: string;
+  /**
+   * SNS（Slack のリンク展開など）に出す説明文。省略すると description を使う。
+   * 記事ページはここにブックマークの一覧を入れる — feed.xml は summary を出さないので、
+   * Slack に流れたときに中身が分かるのはこの説明文だけ。
+   * 検索エンジン向けの meta description は箇条書きにしたくないので別扱いにしている。
+   */
+  ogDescription?: string;
   /** 記事ページは article、それ以外は website（OGP） */
   ogType?: 'website' | 'article';
   /** 記事の公開日時（OGP の article:published_time） */
@@ -26,6 +33,7 @@ interface Props {
 const {
   title,
   description,
+  ogDescription,
   ogType = 'website',
   publishedTime,
   modifiedTime,
@@ -37,6 +45,7 @@ const {
 
 const pageTitle = title ? `${title} | ${SITE.title}` : SITE.title;
 const pageDescription = description ?? SITE.description;
+const pageOgDescription = ogDescription ?? pageDescription;
 const feedUrl = withBase('/feed.xml');
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const absolute = (path: string) => new URL(path, Astro.site).href;
@@ -63,7 +72,7 @@ const ogImage = absolute(withBase(SITE.ogImage));
     <meta property="og:type" content={ogType} />
     <meta property="og:site_name" content={SITE.title} />
     <meta property="og:title" content={pageTitle} />
-    <meta property="og:description" content={pageDescription} />
+    <meta property="og:description" content={pageOgDescription} />
     <meta property="og:url" content={canonical} />
     <meta property="og:locale" content="ja_JP" />
     <meta property="og:image" content={ogImage} />
@@ -88,7 +97,7 @@ const ogImage = absolute(withBase(SITE.ogImage));
     }
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={pageTitle} />
-    <meta name="twitter:description" content={pageDescription} />
+    <meta name="twitter:description" content={pageOgDescription} />
     <meta name="twitter:image" content={ogImage} />
 
     <link

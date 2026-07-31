@@ -1,6 +1,7 @@
 ---
 import BaseLayout from './BaseLayout.astro';
 import { formatDateJa, toDescription, withBase } from '../lib/posts';
+import { shareDescription } from '../lib/share';
 import { SITE } from '../site';
 
 export interface PostRef {
@@ -13,13 +14,18 @@ interface Props {
   date: Date;
   updated?: Date;
   excerpt?: string;
+  /** 記事本文。SNS 共有用の説明文（ブックマーク一覧）を組み立てるのに使う */
+  body?: string;
   /** 一覧の並び（新しい順）で1つ新しい記事 / 1つ古い記事 */
   newer?: PostRef;
   older?: PostRef;
 }
 
-const { title, date, updated, excerpt, newer, older } = Astro.props;
+const { title, date, updated, excerpt, body, newer, older } = Astro.props;
 const description = excerpt ? toDescription(excerpt) : SITE.description;
+// Slack に流れたときに読めるのはリンク展開（OGP）だけなので、
+// 本文のブックマーク一覧をそのまま説明文にする。
+const ogDescription = shareDescription(body ?? '', excerpt) ?? description;
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
 
 // 検索結果に日付と著者を出せるようにする構造化データ
@@ -42,6 +48,7 @@ const jsonLd = {
 <BaseLayout
   title={title}
   description={description}
+  ogDescription={ogDescription}
   ogType="article"
   publishedTime={date}
   modifiedTime={updated}

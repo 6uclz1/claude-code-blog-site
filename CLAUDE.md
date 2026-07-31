@@ -133,8 +133,9 @@ docker compose run --rm scripts npm test
   - `src/lib/posts.ts`: astro:content を読む側（sorting, URL, excerpt rendering）
   - `src/lib/format.ts`: astro に依存しない整形（permalink→param, 日付, description）。
     `posts.ts` から再エクスポートしているので import 元は変わらない
-  - `src/lib/bookmarks.ts`: 本文からブックマーク見出しを抽出（feed と `/sites/` が共用）
-  - `src/lib/feed.ts` / `src/lib/xml.ts`: フィードの summary 生成と XML エスケープ
+  - `src/lib/bookmarks.ts`: 本文からブックマーク見出しを抽出（OGP と `/sites/` が共用）
+  - `src/lib/share.ts`: 共有用（og:description / twitter:description）の説明文を組み立てる
+  - `src/lib/xml.ts`: フィードの XML エスケープ
   - `src/lib/url.ts`: 表示用のURL整形（パーセントエンコードのデコード）。はてなのRSSは
     元記事のタイトルが無いブックマークのタイトルをURLのまま返し、そのURLの日本語は
     `%E7%99%BB%E5%A3%87...` のままなので、見出し・一覧・フィードに出す前にここで戻す。
@@ -173,17 +174,24 @@ docker compose run --rm scripts npm test
   `/`, later pages are `/page2/`, `/page3/`, … (the Jekyll `paginate_path` is preserved)
 - **Atom feed**: `src/pages/feed.xml.ts` emits `/feed.xml` in the same Atom format
   jekyll-feed produced, so existing subscribers and the publishing gate keep working.
-  Each entry's `<summary>` is built by `src/lib/feed.ts` from the bookmark headings in the
-  post body — a `・`-prefixed title list, nothing else. Slack's RSS integration shows only
-  the head of the summary, so any preamble would push the list out of the preview; the list
-  is capped by `FEED_SUMMARY_MAX_CHARS` / `FEED_SUMMARY_TITLE_MAX_CHARS` and the overflow
-  collapses into `ほかN件`. Lines are separated by both `<br />` and a real newline so
-  HTML readers and tag-stripping clients (Slack) both break lines. Posts without bookmark
-  headings fall back to `excerpt`. Everything inside a `type="html"` element (titles and
-  summaries alike) is escaped twice, so a title like `<Suspense>` is not swallowed as a tag
-- **SEO**: OGP / Twitter Card meta in `BaseLayout` (with the shared `public/og.png`),
-  `BlogPosting` JSON-LD on article pages, `sitemap.xml`, a `404.astro` page, and
-  `noindex, follow` + `rel=prev/next` on the paginated pages (`/page2/` and later)
+  Entries carry **no `<summary>`** — only title / link / dates / author. Slack's RSS
+  integration prints the summary *and* unfurls the link, so a summary here means the same
+  bookmark list appears twice in one message. The article's content is carried by the OGP
+  description instead (below). Everything inside a `type="html"` element is escaped twice,
+  so a title like `<Suspense>` is not swallowed as a tag
+- **SEO / 共有時の説明文**: OGP / Twitter Card meta in `BaseLayout` (with the shared
+  `public/og.png`), `BlogPosting` JSON-LD on article pages, `sitemap.xml`, a `404.astro`
+  page, and `noindex, follow` + `rel=prev/next` on the paginated pages (`/page2/` and later).
+  Article pages pass a separate `ogDescription` built by `src/lib/share.ts` from the
+  bookmark headings in the post body — a `・`-prefixed title list, one per line, joined with
+  real newlines so Slack's link unfurl breaks the lines. Because the feed no longer carries
+  a summary, this is the only place a Slack reader sees what is in the post, so the list is
+  **not** trimmed to a preview: every bookmark of the day is included.
+  `SHARE_DESCRIPTION_MAX_CHARS` / `SHARE_TITLE_MAX_CHARS` only keep the meta tag from
+  growing without bound (the overflow collapses into `ほかN件`) and do not fire at the usual
+  ~10 bookmarks a day. Posts without bookmark headings fall back to `excerpt`.
+  `<meta name="description">` and the JSON-LD keep the prose `excerpt` — a bullet list is
+  for the share preview, not for search results
 - **Post navigation**: article pages link to the next/previous post in the feed order
   (computed in `[...slug].astro` from the sorted list), plus the back link to the index
 - **Search**: `/search/` is Pagefind. The index is built by `npm run build`'s second step
@@ -371,7 +379,7 @@ writing it — useful for checking the output length after a prompt change.
   `src/lib/posts.ts` is excluded from the coverage config — it imports `astro:content` and can
   never be tested, so counting it as 0% would make the total useless as a threshold
 - **Frontend Tests**: only modules that do not import `astro:content` can be tested this way,
-  which is why the pure helpers live in `format.ts` / `bookmarks.ts` / `feed.ts` / `xml.ts`
+  which is why the pure helpers live in `format.ts` / `bookmarks.ts` / `share.ts` / `xml.ts`
   rather than in `posts.ts`
 - **Dependency injection instead of monkeypatching**: ESM exports cannot be replaced at
   runtime, so anything a test needs to control is a parameter — `run({ deps })`,
