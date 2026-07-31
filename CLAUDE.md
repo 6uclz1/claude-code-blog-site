@@ -133,7 +133,8 @@ docker compose run --rm scripts npm test
   - `src/lib/posts.ts`: astro:content を読む側（sorting, URL, excerpt rendering）
   - `src/lib/format.ts`: astro に依存しない整形（permalink→param, 日付, description）。
     `posts.ts` から再エクスポートしているので import 元は変わらない
-  - `src/lib/bookmarks.ts`: 本文からブックマーク見出しを抽出（OGP と `/sites/` が共用）
+  - `src/lib/bookmarks.ts`: 本文からブックマークの見出し・URL・1行要約を抽出
+    （OGP と `/sites/`、週刊まとめが共用）
   - `src/lib/share.ts`: 共有用（og:description / twitter:description）の説明文を組み立てる
   - `src/lib/xml.ts`: フィードの XML エスケープ
   - `src/lib/url.ts`: 表示用のURL整形（パーセントエンコードのデコード）。はてなのRSSは
@@ -182,14 +183,23 @@ docker compose run --rm scripts npm test
 - **SEO / 共有時の説明文**: OGP / Twitter Card meta in `BaseLayout` (with the shared
   `public/og.png`), `BlogPosting` JSON-LD on article pages, `sitemap.xml`, a `404.astro`
   page, and `noindex, follow` + `rel=prev/next` on the paginated pages (`/page2/` and later).
-  Article pages pass a separate `ogDescription` built by `src/lib/share.ts` from the
-  bookmark headings in the post body — a `・`-prefixed title list, one per line, joined with
-  real newlines so Slack's link unfurl breaks the lines. Because the feed no longer carries
-  a summary, this is the only place a Slack reader sees what is in the post, so the list is
-  **not** trimmed to a preview: every bookmark of the day is included.
-  `SHARE_DESCRIPTION_MAX_CHARS` / `SHARE_TITLE_MAX_CHARS` only keep the meta tag from
-  growing without bound (the overflow collapses into `ほかN件`) and do not fire at the usual
-  ~10 bookmarks a day. Posts without bookmark headings fall back to `excerpt`.
+  Article pages pass a separate `ogDescription` built by `src/lib/share.ts` from the post
+  body: per bookmark a `・`-prefixed title line plus the one-line summary indented under it
+  (`　`), joined with real newlines so Slack's link unfurl breaks the lines. Because the
+  feed no longer carries a summary, this is the only place a Slack reader sees what is in
+  the post, so the list is **not** trimmed to a preview: every bookmark of the day is
+  included (~600 chars on a normal day). The bullet points under each summary are
+  deliberately left out — the longer the description, the more likely the client truncates
+  it, and what disappears is whole bookmarks off the end.
+  That is also why degradation drops **summaries** first: if the summaries do not fit in
+  `SHARE_DESCRIPTION_MAX_CHARS` (1500) the whole thing falls back to the title-only list,
+  so every bookmark stays visible instead of a few getting detail and the rest vanishing;
+  only if the titles alone still do not fit does the overflow collapse into `ほかN件`.
+  Across `_posts/` today, 327 of 332 posts fit with summaries.
+  `src/lib/bookmarks.ts` supplies the summary — the first prose line after the heading,
+  skipping sub-headings, bullets, `**要点**`-style label lines and the legacy `**URL:**`
+  line, which lands on the generated one-liner in current posts and on the opening of
+  「詳細な要約」 in the legacy ones. Posts without bookmark headings fall back to `excerpt`.
   `<meta name="description">` and the JSON-LD keep the prose `excerpt` — a bullet list is
   for the share preview, not for search results
 - **Post navigation**: article pages link to the next/previous post in the feed order
