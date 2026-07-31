@@ -49,16 +49,18 @@ title: はてなブックマーク 2026年07月21日 の記事まとめ (1件)
 *   なにか
 `;
 
+// 週刊まとめが使うのはタイトルとURLだけ。
+// summary（共有用の説明文で使う）も付いてくるので toMatchObject で見る。
 describe('extractBookmarks', () => {
   it('現在の形式を読む', () => {
-    expect(extractBookmarks(bodyOf(NEW_FORMAT))).toEqual([
+    expect(extractBookmarks(bodyOf(NEW_FORMAT))).toMatchObject([
       { title: '記事A', url: 'https://example.com/a' },
       { title: '記事B', url: 'https://blog.example.org/b' },
     ]);
   });
 
   it('旧形式は次の行からURLを補う', () => {
-    expect(extractBookmarks(bodyOf(OLD_FORMAT))).toEqual([
+    expect(extractBookmarks(bodyOf(OLD_FORMAT))).toMatchObject([
       { title: '記事C', url: 'https://example.com/c' },
     ]);
   });
@@ -68,7 +70,7 @@ describe('extractBookmarks', () => {
   });
 
   it('URLの無い採番見出しも残す', () => {
-    expect(extractBookmarks('## 1. 記事D\n\n本文\n')).toEqual([{ title: '記事D' }]);
+    expect(extractBookmarks('## 1. 記事D\n\n本文\n')).toMatchObject([{ title: '記事D' }]);
   });
 });
 

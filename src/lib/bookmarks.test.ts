@@ -13,7 +13,7 @@ describe('extractBookmarks', () => {
     ].join('\n');
 
     expect(extractBookmarks(body)).toEqual([
-      { title: '記事タイトル', url: 'https://example.com/a' },
+      { title: '記事タイトル', url: 'https://example.com/a', summary: '要約の本文' },
       { title: 'もう1件', url: 'https://example.org/b/' },
     ]);
   });
@@ -30,7 +30,7 @@ describe('extractBookmarks', () => {
     ].join('\n');
 
     expect(extractBookmarks(body)).toEqual([
-      { title: '昔の記事', url: 'https://example.com/old' },
+      { title: '昔の記事', url: 'https://example.com/old', summary: '要点：' },
     ]);
   });
 
@@ -49,6 +49,57 @@ describe('extractBookmarks', () => {
       { title: '記事A' },
       { title: '記事B', url: 'https://example.com/b' },
     ]);
+  });
+
+  it('要約は見出し直後の最初の地の文だけを取り、2行目以降は見ない', () => {
+    const body = [
+      '## [記事A](https://example.com/)',
+      '',
+      '1行目の要約',
+      '2行目は無視する',
+      '',
+      '## [記事B](https://example.org/)',
+    ].join('\n');
+
+    expect(extractBookmarks(body)[0]!.summary).toBe('1行目の要約');
+  });
+
+  it('箇条書き・区切り線・見出し代わりの強調は要約にしない（旧形式）', () => {
+    // 旧形式は `### AI要約` `**要点**` と箇条書きを挟んでから地の文が来る
+    const body = [
+      '## 1. 昔の記事',
+      '',
+      '**URL:** [https://example.com/old](https://example.com/old)',
+      '',
+      '### AI要約',
+      '',
+      '**要点**',
+      '',
+      '*   箇条書きの要点',
+      '',
+      '**詳細な要約**',
+      '',
+      '本文の書き出し。',
+      '',
+      '---',
+    ].join('\n');
+
+    expect(extractBookmarks(body)[0]!.summary).toBe('本文の書き出し。');
+  });
+
+  it('要約のリンクはテキストだけ残し、記法を落として1行にまとめる', () => {
+    const body = [
+      '## [記事A](https://example.com/)',
+      '',
+      '[**公式ブログ**](https://example.org/)  が  `useState` を解説。',
+    ].join('\n');
+
+    expect(extractBookmarks(body)[0]!.summary).toBe('公式ブログ が useState を解説。');
+  });
+
+  it('地の文が無ければ要約は付かない', () => {
+    const body = ['## [記事A](https://example.com/)', '', '- 要点だけ'].join('\n');
+    expect(extractBookmarks(body)[0]!.summary).toBeUndefined();
   });
 
   it('記事内のセクション見出しは拾わない', () => {
