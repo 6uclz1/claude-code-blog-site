@@ -25,6 +25,7 @@ export const GET: APIRoute = async ({ site }) => {
     urls: {
       home: baseUrl.href,
       search: absolute('search/'),
+      index: absolute('index.json'),
       archive: absolute('archive/'),
       sites: absolute('sites/'),
       feed: absolute('feed.xml'),

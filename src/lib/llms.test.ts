@@ -7,6 +7,7 @@ const input: LlmsTxtInput = {
   urls: {
     home: 'https://example.github.io/blog/',
     search: 'https://example.github.io/blog/search/',
+    index: 'https://example.github.io/blog/index.json',
     archive: 'https://example.github.io/blog/archive/',
     sites: 'https://example.github.io/blog/sites/',
     feed: 'https://example.github.io/blog/feed.xml',
@@ -37,6 +38,12 @@ describe('renderLlmsTxt', () => {
     expect(text).toContain('.md');
     expect(text).toContain(input.urls.archive);
     expect(text).toContain(input.urls.feed);
+  });
+
+  it('JavaScript が使えない読み手に /index.json を案内する', () => {
+    const text = renderLlmsTxt(input);
+    expect(text).toContain('JavaScript が使えない場合');
+    expect(text).toContain(input.urls.index);
   });
 
   it('記事は日付付きで Markdown 版へリンクする', () => {

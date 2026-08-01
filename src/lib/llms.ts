@@ -26,6 +26,8 @@ export interface LlmsTxtInput {
     home: string;
     /** `/search/`。末尾スラッシュ付き */
     search: string;
+    /** `/index.json`。全記事とブックマークの機械可読なインデックス */
+    index: string;
     archive: string;
     sites: string;
     feed: string;
@@ -60,11 +62,13 @@ export function renderLlmsTxt(input: LlmsTxtInput): string {
     '## 読み方',
     '',
     `- 本文の取得: 記事URLの末尾のスラッシュを \`.md\` に替えると Markdown 原文が返ります（例: \`${input.recent[0]?.url ?? urls.home}\` → \`${input.recent[0]?.markdownUrl ?? `${urls.home}...`}\`）。HTMLを解析する必要はありません`,
-    `- 検索: [検索](${urls.search}) は \`?q=\` にキーワードを渡せます（例: ${searchExample}）。結果の描画に JavaScript が必要なので、JavaScript を実行できない場合は下のアーカイブから辿ってください`,
+    `- 検索（JavaScript が使える場合）: [検索](${urls.search}) は \`?q=\` にキーワードを渡せます（例: ${searchExample}）。結果の描画に JavaScript が必要です`,
+    `- 検索（JavaScript が使えない場合）: [${urls.index}](${urls.index}) に全${input.postCount}記事とブックマーク（タイトル・リンク先・ホスト名・1行要約）が入っています。1回取得すれば手元で絞り込めます（全文で1MB近くあるので、通しで読むより検索語で絞り込む方が向いています）。当たった記事の \`markdown\` を読めば本文まで届きます`,
     `- 全記事の一覧: [アーカイブ](${urls.archive}) に年ごとの全記事（タイトルと日付）が1ページで載っています`,
     '',
     '## 一覧ページ',
     '',
+    `- [インデックス（JSON）](${urls.index}): 全記事とブックマークの機械可読な一覧`,
     `- [アーカイブ](${urls.archive}): 全記事を年ごとにまとめた一覧`,
     `- [ブックマーク先サイト](${urls.sites}): ブックマークされたサイトを件数順に集計`,
     `- [Atomフィード](${urls.feed}): 最新記事の更新通知（本文は含みません）`,
