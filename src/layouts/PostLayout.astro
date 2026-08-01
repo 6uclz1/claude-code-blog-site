@@ -19,9 +19,12 @@ interface Props {
   /** 一覧の並び（新しい順）で1つ新しい記事 / 1つ古い記事 */
   newer?: PostRef;
   older?: PostRef;
+  /** 同じ記事の Markdown 版のURL（rel=alternate に出す） */
+  markdownUrl?: string;
 }
 
-const { title, date, updated, excerpt, body, newer, older } = Astro.props;
+const { title, date, updated, excerpt, body, newer, older, markdownUrl } =
+  Astro.props;
 const description = excerpt ? toDescription(excerpt) : SITE.description;
 // Slack に流れたときに読めるのはリンク展開（OGP）だけなので、
 // 本文のブックマーク一覧をそのまま説明文にする。
@@ -53,6 +56,7 @@ const jsonLd = {
   publishedTime={date}
   modifiedTime={updated}
   jsonLd={jsonLd}
+  markdownUrl={markdownUrl}
 >
   <!--
     data-pagefind-body を付けたページだけが検索インデックスに入る。

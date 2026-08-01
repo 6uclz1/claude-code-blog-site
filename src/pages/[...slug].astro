@@ -3,7 +3,14 @@ import type { GetStaticPaths } from 'astro';
 import { render } from 'astro:content';
 import PostLayout from '../layouts/PostLayout.astro';
 import type { PostRef } from '../layouts/PostLayout.astro';
-import { getSortedPosts, permalinkToParam, postUrl, type Post } from '../lib/posts';
+import {
+  getSortedPosts,
+  permalinkToParam,
+  postUrl,
+  withBase,
+  type Post,
+} from '../lib/posts';
+import { postMarkdownPath } from '../lib/post-markdown';
 
 export const getStaticPaths: GetStaticPaths = async () => {
   const posts = await getSortedPosts();
@@ -54,6 +61,7 @@ const { Content } = await render(post);
   body={post.body}
   newer={newer}
   older={older}
+  markdownUrl={withBase(postMarkdownPath(post.data.permalink))}
 >
   <Content />
 </PostLayout>

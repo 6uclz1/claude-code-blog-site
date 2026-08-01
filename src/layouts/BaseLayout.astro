@@ -28,6 +28,11 @@ interface Props {
   nextUrl?: string;
   /** 構造化データ（JSON-LD）。記事ページの BlogPosting など */
   jsonLd?: Record<string, unknown>;
+  /**
+   * 同じ内容の Markdown 版のURL（記事ページのみ）。
+   * HTML を解析しない読み手が本文へ辿り着けるようにする（/llms.txt と同じ規則）。
+   */
+  markdownUrl?: string;
 }
 
 const {
@@ -41,6 +46,7 @@ const {
   prevUrl,
   nextUrl,
   jsonLd,
+  markdownUrl,
 } = Astro.props;
 
 const pageTitle = title ? `${title} | ${SITE.title}` : SITE.title;
@@ -106,6 +112,16 @@ const ogImage = absolute(withBase(SITE.ogImage));
       title={SITE.title}
       href={feedUrl}
     />
+    {
+      markdownUrl && (
+        <link
+          rel="alternate"
+          type="text/markdown"
+          title="Markdown版"
+          href={markdownUrl}
+        />
+      )
+    }
     <meta name="generator" content={Astro.generator} />
     {
       jsonLd && (

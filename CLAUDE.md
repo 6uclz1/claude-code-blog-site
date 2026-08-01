@@ -137,6 +137,8 @@ docker compose run --rm scripts npm test
     （OGP と `/sites/`、週刊まとめが共用）
   - `src/lib/share.ts`: 共有用（og:description / twitter:description）の説明文を組み立てる
   - `src/lib/xml.ts`: フィードの XML エスケープ
+  - `src/lib/llms.ts`: `/llms.txt` の本文（AIエージェント向けの案内）
+  - `src/lib/post-markdown.ts`: 記事の Markdown 版（`.md`）の組み立てとそのパス規則
   - `src/lib/url.ts`: 表示用のURL整形（パーセントエンコードのデコード）。はてなのRSSは
     元記事のタイトルが無いブックマークのタイトルをURLのまま返し、そのURLの日本語は
     `%E7%99%BB%E5%A3%87...` のままなので、見出し・一覧・フィードに出す前にここで戻す。
@@ -146,7 +148,8 @@ docker compose run --rm scripts npm test
   - `src/components/`: `Header`, `Footer`, `PostList`, `Pagination`,
     `PostIndexSection`（一覧の共通マークアップ）, `SiteNav`
   - `src/pages/`: `index.astro`, `page[num].astro`, `[...slug].astro`, `404.astro`,
-    `archive.astro`, `sites.astro`, `search.astro`, `feed.xml.ts`, `sitemap.xml.ts`
+    `archive.astro`, `sites.astro`, `search.astro`, `feed.xml.ts`, `sitemap.xml.ts`,
+    `llms.txt.ts`, `[...slug].md.ts`
   - `public/og.png`: 全ページ共通のOGP画像。`node scripts/generate_og_image.mjs` で再生成
   - `src/styles/global.css`: custom CSS (imported by `BaseLayout`)
   - `_posts/`: blog posts in Markdown with YAML front matter
@@ -206,7 +209,18 @@ docker compose run --rm scripts npm test
   (computed in `[...slug].astro` from the sorted list), plus the back link to the index
 - **Search**: `/search/` is Pagefind. The index is built by `npm run build`'s second step
   and only covers `data-pagefind-body` (the `<article>` in `PostLayout.astro`), so
-  listing pages never show up as results
+  listing pages never show up as results. `/search/?q=語` opens straight into the results
+  (`ui.triggerSearch()`), and typing writes the term back into the URL with `replaceState`,
+  so a result page can be linked or handed to someone. 静的サイトなのでクエリを解釈するのは
+  ブラウザ側 — JavaScript を実行しない読み手には結果が出ないため、`/llms.txt` と
+  `<noscript>` は `/archive/` を代わりの入口として案内する
+- **AIエージェント向けの導線**: `/llms.txt`（[llmstxt.org](https://llmstxt.org/) の書式、
+  中身は `src/lib/llms.ts`）が入口で、「検索は `/search/?q=`」「本文は記事URLの末尾を
+  `.md` に替える」「全記事は `/archive/`」の3つを案内する。`.md` は
+  `src/pages/[...slug].md.ts` が `/2026/07/31/hatena-bookmarks.md` として出力する
+  front matter 付きの原文で、記事ページからは `rel="alternate" type="text/markdown"` で
+  辿れる。トップページの `WebSite` JSON-LD には `SearchAction`（`/search/?q={query}`）を
+  入れてある。front matter は `_posts/` を書くときと同じ `buildFrontMatter()` を通す
 - **Archive / sites**: `/archive/` lists every post grouped by year — the only way to
   reach old posts without clicking through 30+ pagination pages — and `/sites/` counts
   the bookmarked hosts from the post bodies via `src/lib/bookmarks.ts`
