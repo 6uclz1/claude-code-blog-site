@@ -2,6 +2,9 @@
 // 全文検索。インデックスは Pagefind が `npm run build` の後段で dist を走査して作る
 // （src/layouts/PostLayout.astro の data-pagefind-body が対象）。
 // dist を経由しない `npm run dev` では /pagefind/ が無いため検索は動かない。
+//
+// `?q=` を付けたURLはそのまま検索結果になる（/llms.txt が案内している入口）。
+// 静的サイトなのでクエリの解釈はブラウザ側 — 検索語は下のスクリプトが読む。
 import BaseLayout from '../layouts/BaseLayout.astro';
 import SiteNav from '../components/SiteNav.astro';
 import { withBase } from '../lib/posts';
@@ -32,7 +35,9 @@ const pagefindJs = withBase('/pagefind/pagefind-ui.js');
       <div id="search" class="search-ui">
         <noscript>
           <p class="empty-state">
-            検索にはJavaScriptが必要です。アーカイブから探してください。
+            検索にはJavaScriptが必要です。<a href={withBase('/archive/')}
+              >アーカイブ</a
+            >から探してください。
           </p>
         </noscript>
       </div>
@@ -63,7 +68,7 @@ const pagefindJs = withBase('/pagefind/pagefind-ui.js');
       return true;
     };
 
-    new PagefindUI({
+    const ui = new PagefindUI({
       element: '#search',
       showSubResults: true,
       showImages: false,
@@ -95,5 +100,20 @@ const pagefindJs = withBase('/pagefind/pagefind-ui.js');
         subtree: true,
       });
     }
+
+    // ?q=検索語 で開かれたときは、その語で検索した状態にする。
+    // 入力欄の値は PagefindUI が持っているので triggerSearch に任せる。
+    const initialQuery = new URLSearchParams(location.search).get('q');
+    if (initialQuery) ui.triggerSearch(initialQuery);
+
+    // 手で入力したときもURLに反映して、結果をそのまま共有できるようにする。
+    // history に積むと戻るボタンが1文字ずつ戻ってしまうので replaceState を使う。
+    document.getElementById('search').addEventListener('input', (event) => {
+      if (event.target.type !== 'text') return;
+      const url = new URL(location.href);
+      if (event.target.value) url.searchParams.set('q', event.target.value);
+      else url.searchParams.delete('q');
+      history.replaceState(null, '', url);
+    });
   });
 </script>

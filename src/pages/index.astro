@@ -1,13 +1,34 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PostIndexSection from '../components/PostIndexSection.astro';
-import { getSortedPosts, PAGE_SIZE, pagePath } from '../lib/posts';
+import { getSortedPosts, PAGE_SIZE, pagePath, withBase } from '../lib/posts';
+import { SITE } from '../site';
 
 const posts = await getSortedPosts();
 const totalPages = Math.max(1, Math.ceil(posts.length / PAGE_SIZE));
+
+// 検索の入口（/search/?q=）を機械可読な形で示す。
+// /llms.txt が案内しているのと同じURLで、検索エンジンやAIエージェント向け。
+const searchUrl = new URL(withBase('/search/'), Astro.site).href;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: SITE.title,
+  description: SITE.description,
+  inLanguage: SITE.lang,
+  url: new URL(withBase('/'), Astro.site).href,
+  potentialAction: {
+    '@type': 'SearchAction',
+    target: {
+      '@type': 'EntryPoint',
+      urlTemplate: `${searchUrl}?q={search_term_string}`,
+    },
+    'query-input': 'required name=search_term_string',
+  },
+};
 ---
 
-<BaseLayout nextUrl={totalPages > 1 ? pagePath(2) : undefined}>
+<BaseLayout nextUrl={totalPages > 1 ? pagePath(2) : undefined} jsonLd={jsonLd}>
   <PostIndexSection
     posts={posts.slice(0, PAGE_SIZE)}
     currentPage={1}
