@@ -6,7 +6,6 @@ import {
   shareDescription,
   shareDescriptionLines,
   SHARE_DESCRIPTION_MAX_CHARS,
-  SHARE_SUMMARY_MAX_CHARS,
   SHARE_TITLE_MAX_CHARS,
 } from './share';
 
@@ -21,20 +20,17 @@ const refs = (count: number, summary = '要約'): BookmarkRef[] =>
   }));
 
 describe('buildBookmarkLines', () => {
-  it('タイトルに「・」を付け、要約をぶら下げる', () => {
+  it('タイトルに「・」を付け、URLをぶら下げる', () => {
     expect(
       buildBookmarkLines([
-        { title: 'A', summary: 'Aの要約' },
-        { title: 'B', summary: 'Bの要約' },
+        { title: 'A', url: 'https://example.com/a', summary: 'Aの要約' },
+        { title: 'B', url: 'https://example.com/b', summary: 'Bの要約' },
       ])
-    ).toEqual(['・A', '　Aの要約', '・B', '　Bの要約']);
+    ).toEqual(['・A', '　https://example.com/a', '・B', '　https://example.com/b']);
   });
 
-  it('要約が無い記事はタイトルだけの行になる', () => {
-    expect(buildBookmarkLines([{ title: 'A' }, { title: 'B', summary: '  ' }])).toEqual([
-      '・A',
-      '・B',
-    ]);
+  it('URLが無い旧形式の記事はタイトルだけの行になる', () => {
+    expect(buildBookmarkLines([{ title: 'A' }, { title: 'B' }])).toEqual(['・A', '・B']);
   });
 
   it('長いタイトルは上限で省略する', () => {
@@ -45,15 +41,8 @@ describe('buildBookmarkLines', () => {
     expect(line!.endsWith('…')).toBe(true);
   });
 
-  it('長い要約は上限で省略する', () => {
-    const summary = 'あ'.repeat(SHARE_SUMMARY_MAX_CHARS + 10);
-    const [, line] = buildBookmarkLines([{ title: 'A', summary }]);
-    expect(line!.slice(1)).toHaveLength(SHARE_SUMMARY_MAX_CHARS);
-    expect(line!.endsWith('…')).toBe(true);
-  });
-
-  it('日次記事の分量（10件・要約付き）は全部載る', () => {
-    const bookmarks = refs(10, 'この記事の要点をひとことでまとめた行'.repeat(2));
+  it('日次記事の分量（10件・URL付き）は全部載る', () => {
+    const bookmarks = refs(10);
     const lines = buildBookmarkLines(bookmarks);
 
     expect(lines.filter((line) => line.startsWith('・'))).toHaveLength(10);
@@ -61,16 +50,7 @@ describe('buildBookmarkLines', () => {
     expect(lineLength(lines)).toBeLessThanOrEqual(SHARE_DESCRIPTION_MAX_CHARS);
   });
 
-  it('要約付きが上限に収まらなければ、要約を落として全件のタイトルを残す', () => {
-    const bookmarks = refs(20, 'あ'.repeat(SHARE_SUMMARY_MAX_CHARS));
-    const lines = buildBookmarkLines(bookmarks);
-
-    expect(lines).toHaveLength(20);
-    expect(lines.every((line) => line.startsWith('・'))).toBe(true);
-    expect(lineLength(lines)).toBeLessThanOrEqual(SHARE_DESCRIPTION_MAX_CHARS);
-  });
-
-  it('タイトルだけでも収まらない分は「ほかN件」に畳む', () => {
+  it('収まらない分はタイトルとURLの組を崩さず「ほかN件」に畳む', () => {
     const bookmarks = refs(80, '').map((ref) => ({
       ...ref,
       title: ref.title.repeat(3),
@@ -82,7 +62,9 @@ describe('buildBookmarkLines', () => {
 
     // 畳んだ件数と表示した件数の合計が元の件数と一致する
     const folded = Number(tail.match(/\d+/)![0]);
-    expect(folded + (lines.length - 1)).toBe(bookmarks.length);
+    const shown = lines.filter((line) => line.startsWith('・')).length;
+    expect(folded + shown).toBe(bookmarks.length);
+    expect(lines.filter((line) => line.startsWith('　'))).toHaveLength(shown);
     expect(lineLength(lines)).toBeLessThanOrEqual(SHARE_DESCRIPTION_MAX_CHARS);
   });
 
@@ -97,7 +79,7 @@ describe('buildBookmarkLines', () => {
 });
 
 describe('shareDescriptionLines', () => {
-  it('本文の見出しと1行要約から一覧を作る', () => {
+  it('本文の見出しからタイトルとURLの一覧を作る', () => {
     const body = [
       '## [記事A](https://example.com/)',
       '',
@@ -112,9 +94,9 @@ describe('shareDescriptionLines', () => {
 
     expect(shareDescriptionLines(body, 'excerptは使われない')).toEqual([
       '・記事A',
-      '　Aの要約',
+      '　https://example.com/',
       '・記事B',
-      '　Bの要約',
+      '　https://example.org/',
     ]);
   });
 
@@ -131,7 +113,9 @@ describe('shareDescriptionLines', () => {
 describe('shareDescription', () => {
   it('Slack が改行として表示できるよう1行ずつ連結する', () => {
     const body = '## [記事A](https://example.com/)\n\nAの要約\n\n## [記事B](https://example.org/)';
-    expect(shareDescription(body)).toBe('・記事A\n　Aの要約\n・記事B');
+    expect(shareDescription(body)).toBe(
+      '・記事A\n　https://example.com/\n・記事B\n　https://example.org/'
+    );
   });
 
   it('中身が無ければ undefined（既定の説明文に任せる）', () => {
