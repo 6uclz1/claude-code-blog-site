@@ -21,11 +21,11 @@
     "health-check": "tsx scripts/check-site-health.ts"
   },
   "dependencies": {
-    "@google/genai": "^2.13.0",
-    "astro": "^7.1.4",
+    "@google/genai": "^2.15.0",
+    "astro": "^7.1.6",
     "cheerio": "^1.2.0",
     "fast-xml-parser": "^5.10.1",
-    "fast-xml-validator": "^1.4.0",
+    "fast-xml-validator": "^1.4.1",
     "js-yaml": "^4.3.0",
     "marked": "^18.0.7"
   },
