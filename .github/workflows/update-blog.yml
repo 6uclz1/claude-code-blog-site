@@ -35,7 +35,29 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # 任意。未設定でも r.jina.ai は匿名で利用できる
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
-        run: npm run summarize
+        run: |
+          set -euo pipefail
+
+          # fetch-and-summarize.ts は RSS 取得を3回試すが、全試行がネットワーク
+          # エラーでも「0件」として exit 0 になる。はてな側の一時的な遅延で日次記事を
+          # 欠損させないため、そのケースだけスクリプト全体を再実行する。
+          for attempt in 1 2 3; do
+            log="summarize-${attempt}.log"
+            npm run summarize 2>&1 | tee "$log"
+
+            fetch_errors=$(grep -c 'Error fetching RSS:' "$log" || true)
+            if ! grep -q 'No entries found in RSS feed' "$log" || [ "$fetch_errors" -lt 3 ]; then
+              exit 0
+            fi
+
+            echo "RSS取得が全試行で失敗しました (実行 ${attempt}/3)" >&2
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 15))
+            fi
+          done
+
+          echo "RSS取得が繰り返し失敗したため、自動更新を失敗扱いにします" >&2
+          exit 1
 
       - name: Check for changes
         id: verify-changed-files
@@ -73,6 +95,7 @@ jobs:
           name: failed-build
           path: |
             build.log
+            summarize-*.log
             _posts/
           if-no-files-found: ignore
           retention-days: 14
