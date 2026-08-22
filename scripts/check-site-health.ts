@@ -20,11 +20,21 @@ import { pathToFileURL } from 'node:url';
 
 import { XMLParser } from 'fast-xml-parser';
 
+import {
+  formatCivilDate,
+  jstDateOf,
+  parseCompactCivilDate,
+  parseInstant,
+  yesterdayInJst,
+  type CivilDate,
+} from './lib/date.ts';
 import { fetchText } from './lib/http.ts';
 import { describeError } from './lib/logger.ts';
+import { parseFeed as parseBookmarkFeed, type FeedEntry as BookmarkFeedEntry } from './lib/rss.ts';
 import { asArray, attrOf, isNode, textOf } from './lib/xml-node.ts';
 
 const DEFAULT_FEED_URL = 'https://6uclz1.github.io/claude-code-blog-site/feed.xml';
+const DEFAULT_SOURCE_FEED_URL = 'https://b.hatena.ne.jp/Buchi_6uclz1/rss';
 
 /**
  * 最新記事の許容される古さ（時間）。
@@ -73,6 +83,8 @@ export interface CheckOptions {
   maxAgeHours: number;
   minEntries: number;
   now?: Date;
+  /** 更新停止と「対象日にブックマークがない正常な停止」を区別するための元RSS */
+  sourceFeed?: string;
 }
 
 /** フィードの中身を検査して、見つかった異常を日本語で返す */
@@ -133,10 +145,75 @@ function newestTimestamp(entries: FeedEntry[]): Date | undefined {
   return newest;
 }
 
+/** はてなのRSSで実際の記事生成に使われる日付候補を集める */
+function bookmarkDates(entry: BookmarkFeedEntry): CivilDate[] {
+  const dates: CivilDate[] = [];
+
+  for (const value of [entry.dcDate, entry.published]) {
+    const instant = value ? parseInstant(value) : undefined;
+    if (instant) dates.push(jstDateOf(instant));
+  }
+
+  const compactDate = entry.id ? /\/(\d{8})#/.exec(entry.id)?.[1] : undefined;
+  const idDate = compactDate ? parseCompactCivilDate(compactDate) : undefined;
+  if (idDate) dates.push(idDate);
+
+  return dates;
+}
+
+/**
+ * 最後に公開した日より後で、すでに日次生成の対象になったブックマークがあるか。
+ *
+ * 当日のブックマークは翌朝にまとめるため、まだ記事がなくても異常ではない。
+ * 空のRSSは正常だが、壊れたRSSや日付を読めない記事で停止を見逃さないようにする。
+ */
+export function hasUnpublishedBookmarks(
+  xml: string,
+  latestPublished: Date,
+  now: Date = new Date()
+): boolean {
+  let document: unknown;
+  try {
+    document = parser.parse(xml);
+  } catch (error) {
+    throw new Error(`RSSを解析できません: ${describeError(error)}`);
+  }
+
+  if (
+    !isNode(document) ||
+    !['rdf:RDF', 'rss', 'feed'].some((root) => isNode(document[root]))
+  ) {
+    throw new Error('RSSの形式を認識できません');
+  }
+
+  const publishedDate = formatCivilDate(jstDateOf(latestPublished));
+  const latestExpectedDate = formatCivilDate(yesterdayInJst(now));
+
+  for (const bookmark of parseBookmarkFeed(xml)) {
+    const dates = bookmarkDates(bookmark);
+    if (dates.length === 0) {
+      throw new Error(`ブックマークの日付を読み取れません: ${bookmark.link || '(URLなし)'}`);
+    }
+
+    if (
+      dates.some((date) => {
+        const day = formatCivilDate(date);
+        return day > publishedDate && day <= latestExpectedDate;
+      })
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export interface HealthResult {
   ok: boolean;
   problems: string[];
   entryCount: number;
+  /** 新しい記事がない原因が、対象日のブックマーク不足だと確認できた */
+  sourceIdle?: boolean;
 }
 
 export async function checkSite(
@@ -161,6 +238,33 @@ export async function checkSite(
   }
 
   const problems = checkEntries(entries, options);
+  const newest = newestTimestamp(entries);
+  const now = options.now ?? new Date();
+  const stale =
+    newest !== undefined &&
+    (now.getTime() - newest.getTime()) / 3_600_000 > options.maxAgeHours;
+
+  if (stale && newest && options.sourceFeed) {
+    try {
+      const sourceXml = await fetchFeed(options.sourceFeed);
+      if (!hasUnpublishedBookmarks(sourceXml, newest, now)) {
+        const ageProblem = problems.findIndex((problem) =>
+          problem.includes('自動更新が動いていない可能性があります')
+        );
+        if (ageProblem !== -1) problems.splice(ageProblem, 1);
+
+        return {
+          ok: problems.length === 0,
+          problems,
+          entryCount: entries.length,
+          sourceIdle: true,
+        };
+      }
+    } catch (error) {
+      problems.push(`ブックマーク元を確認できません: ${describeError(error)}`);
+    }
+  }
+
   return { ok: problems.length === 0, problems, entryCount: entries.length };
 }
 
@@ -173,6 +277,7 @@ export function parseArgs(argv: string[]): CliArgs {
     feed: DEFAULT_FEED_URL,
     maxAgeHours: DEFAULT_MAX_AGE_HOURS,
     minEntries: 1,
+    sourceFeed: DEFAULT_SOURCE_FEED_URL,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -197,6 +302,9 @@ export function parseArgs(argv: string[]): CliArgs {
         break;
       case '--max-age-hours':
         args.maxAgeHours = numeric(flag);
+        break;
+      case '--source-feed':
+        args.sourceFeed = value();
         break;
       case '--min-entries':
         args.minEntries = numeric(flag);
@@ -225,7 +333,12 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return 1;
   }
 
-  process.stdout.write(`✅ サイトは正常です (${result.entryCount} 件の記事, ${args.feed})\n`);
+  const sourceStatus = result.sourceIdle
+    ? '; 前回公開以降に対象日のブックマークはありません'
+    : '';
+  process.stdout.write(
+    `✅ サイトは正常です (${result.entryCount} 件の記事, ${args.feed}${sourceStatus})\n`
+  );
   return 0;
 }
 

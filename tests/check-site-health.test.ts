@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   checkEntries,
   checkSite,
+  hasUnpublishedBookmarks,
   main,
   parseArgs,
   parseFeed,
@@ -38,7 +39,23 @@ function entry({
   </entry>`;
 }
 
+function bookmarkFeed(...dates: string[]): string {
+  const entries = dates.map((date, index) => `
+    <item rdf:about="https://b.hatena.ne.jp/Buchi_6uclz1/bookmark-${index}">
+      <title>記事 ${index}</title>
+      <link>https://example.com/source-${index}</link>
+      <dc:date>${date}</dc:date>
+    </item>`);
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:dc="http://purl.org/dc/elements/1.1/">
+  ${entries.join('')}
+</rdf:RDF>`;
+}
+
 const options = { maxAgeHours: 36, minEntries: 1, now: NOW };
+const sourceOptions = { ...options, sourceFeed: 'https://example.com/bookmarks.xml' };
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -165,6 +182,72 @@ describe('checkSite', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(result.ok).toBe(true);
   });
+
+  it('古い記事でも対象日の新しいブックマークがなければ正常とする', async () => {
+    const result = await checkSite('https://example.com/feed.xml', sourceOptions, async (url) =>
+      url === sourceOptions.sourceFeed
+        ? bookmarkFeed(hoursAgo(96))
+        : feed(entry({ updated: hoursAgo(72) }))
+    );
+
+    expect(result).toMatchObject({ ok: true, sourceIdle: true, entryCount: 1 });
+    expect(result.problems).toEqual([]);
+  });
+
+  it('古い記事の後に前日分のブックマークがあれば停止を検知する', async () => {
+    const result = await checkSite('https://example.com/feed.xml', sourceOptions, async (url) =>
+      url === sourceOptions.sourceFeed
+        ? bookmarkFeed(hoursAgo(12))
+        : feed(entry({ updated: hoursAgo(72) }))
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.problems.join()).toMatch(/自動更新が動いていない/);
+  });
+
+  it('当日のブックマークは翌朝の生成対象なので停止とみなさない', async () => {
+    const result = await checkSite('https://example.com/feed.xml', sourceOptions, async (url) =>
+      url === sourceOptions.sourceFeed
+        ? bookmarkFeed(hoursAgo(2))
+        : feed(entry({ updated: hoursAgo(72) }))
+    );
+
+    expect(result).toMatchObject({ ok: true, sourceIdle: true });
+  });
+
+  it('元RSSの確認に失敗したときは古い記事を正常扱いしない', async () => {
+    const result = await checkSite('https://example.com/feed.xml', sourceOptions, async (url) => {
+      if (url === sourceOptions.sourceFeed) throw new Error('HTTP 503');
+      return feed(entry({ updated: hoursAgo(72) }));
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.problems.join()).toMatch(/ブックマーク元を確認できません: HTTP 503/);
+    expect(result.problems.join()).toMatch(/自動更新が動いていない/);
+  });
+
+  it('ブックマークがなくても別のフィード異常は見逃さない', async () => {
+    const result = await checkSite('https://example.com/feed.xml', sourceOptions, async (url) =>
+      url === sourceOptions.sourceFeed
+        ? bookmarkFeed()
+        : feed(entry({ title: '', updated: hoursAgo(72) }))
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.problems).toEqual(['タイトルが空の記事がフィードに含まれています']);
+  });
+});
+
+describe('hasUnpublishedBookmarks', () => {
+  const latestPublished = new Date(hoursAgo(72));
+
+  it('空の元RSSは未公開ブックマークなしとする', () => {
+    expect(hasUnpublishedBookmarks(bookmarkFeed(), latestPublished, NOW)).toBe(false);
+  });
+
+  it('元RSSが壊れていれば例外にする', () => {
+    expect(() => hasUnpublishedBookmarks('<broken/>', latestPublished, NOW)).toThrow(/形式/);
+  });
 });
 
 describe('parseArgs', () => {
@@ -176,6 +259,12 @@ describe('parseArgs', () => {
     expect(parseArgs(['--feed', 'https://example.com/f.xml', '--max-age-hours=48'])).toMatchObject({
       feed: 'https://example.com/f.xml',
       maxAgeHours: 48,
+    });
+  });
+
+  it('ブックマーク元のRSSを変更できる', () => {
+    expect(parseArgs(['--source-feed', 'https://example.com/bookmarks.xml'])).toMatchObject({
+      sourceFeed: 'https://example.com/bookmarks.xml',
     });
   });
 
