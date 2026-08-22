@@ -1,12 +1,20 @@
 # 公開中のサイトの異常検知。
 #
 # 既存のワークフローは「実行されたときに失敗したら気づく」形なので、
-# cron が止まった・ブックマークが0件で毎日空振りしている・デプロイが古い成果物を
-# 出し続けている、といった「何も起きない」壊れ方には気づけない。
-# ここでは実際に公開されている feed.xml を外から見て、更新が止まっていないかを確かめる。
+# cron が止まった・デプロイが古い成果物を出し続けている、といった
+# 「何も起きない」壊れ方には気づけない。公開フィードと元のブックマークRSSを
+# 照合し、ブックマークがない正常な休刊日は異常にしない。
 name: Site Health Check
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/health-check.yml'
+      - 'scripts/check-site-health.ts'
+      - 'scripts/lib/date.ts'
+      - 'scripts/lib/rss.ts'
+      - 'tests/check-site-health.test.ts'
   # 日次記事は 8:00 JST に作られる。その2時間後に確認する
   schedule:
     - cron: '0 1 * * *'
@@ -41,6 +49,7 @@ jobs:
         id: check
         env:
           FEED_URL: https://6uclz1.github.io/claude-code-blog-site/feed.xml
+          SOURCE_FEED_URL: https://b.hatena.ne.jp/Buchi_6uclz1/rss
           MAX_AGE_HOURS: ${{ inputs.max_age_hours || '36' }}
         run: |
           set -euo pipefail
@@ -48,6 +57,7 @@ jobs:
           # そうしないとスクリプトの指摘が npm ERR! に埋もれて issue に載らない
           npm run --silent health-check -- \
             --feed "$FEED_URL" \
+            --source-feed "$SOURCE_FEED_URL" \
             --max-age-hours "$MAX_AGE_HOURS" \
             --min-entries 1 2>&1 | tee health-check.log
 
@@ -83,5 +93,5 @@ jobs:
 
             確認する順番:
             1. `Update Blog with Hatena Bookmarks` の直近の実行が成功しているか
-            2. 成功しているのに記事が増えていないなら、はてなブックマークが0件だった可能性
+            2. はてなRSSに未公開の対象日ブックマークがあるか
             3. `_posts/` に記事があるのにサイトに出ていないなら `Deploy Astro site to Pages` を再実行
