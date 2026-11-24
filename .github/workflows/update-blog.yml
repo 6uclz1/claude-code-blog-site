@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 23 * * *'  # 毎日8:00 JST (23:00 UTC)
   workflow_dispatch:      # 手動実行も可能
+    inputs:
+      date:
+        description: '作り直す日付 (YYYY-MM-DD)。空なら前日分＋直近の欠けた日'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -35,15 +40,22 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # 任意。未設定でも r.jina.ai は匿名で利用できる
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          # 入力値は式展開でスクリプトに埋め込まず、環境変数で渡す
+          TARGET_DATE: ${{ inputs.date }}
         run: |
           set -euo pipefail
+
+          args=()
+          if [ -n "${TARGET_DATE:-}" ]; then
+            args=(-- --date "$TARGET_DATE")
+          fi
 
           # fetch-and-summarize.ts は RSS 取得を3回試すが、全試行がネットワーク
           # エラーでも「0件」として exit 0 になる。はてな側の一時的な遅延で日次記事を
           # 欠損させないため、そのケースだけスクリプト全体を再実行する。
           for attempt in 1 2 3; do
             log="summarize-${attempt}.log"
-            npm run summarize 2>&1 | tee "$log"
+            npm run summarize "${args[@]}" 2>&1 | tee "$log"
 
             fetch_errors=$(grep -c 'Error fetching RSS:' "$log" || true)
             if ! grep -q 'No entries found in RSS feed' "$log" || [ "$fetch_errors" -lt 3 ]; then

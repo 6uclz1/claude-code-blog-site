@@ -4,7 +4,9 @@ import {
   authorLabel,
   canonicalTweetUrl,
   fetchTweet,
+  fetchTweetViaFxTwitter,
   fetchTweetViaOEmbed,
+  fxTwitterUrl,
   fetchTweetViaSyndication,
   parseOEmbedHtml,
   parseTweetRef,
@@ -151,9 +153,23 @@ describe('fetchTweetViaSyndication', () => {
 
 describe('fetchTweet', () => {
   const tweet: Tweet = { id: '1', text: '本文', handle: 'user' };
+  const none = () => vi.fn().mockResolvedValue(undefined);
 
-  it('アカウントが分かるときは公式のoEmbedを先に試す', async () => {
+  it('FxTwitter を最初に試す', async () => {
     const fetchers = {
+      fxTwitter: vi.fn().mockResolvedValue(tweet),
+      oEmbed: vi.fn().mockResolvedValue(tweet),
+      syndication: vi.fn().mockResolvedValue(tweet),
+    };
+
+    expect(await fetchTweet({ id: '1', handle: 'user' }, fetchers)).toBe(tweet);
+    expect(fetchers.oEmbed).not.toHaveBeenCalled();
+    expect(fetchers.syndication).not.toHaveBeenCalled();
+  });
+
+  it('FxTwitter が取れずアカウントが分かるときは公式のoEmbedを次に試す', async () => {
+    const fetchers = {
+      fxTwitter: none(),
       oEmbed: vi.fn().mockResolvedValue(tweet),
       syndication: vi.fn().mockResolvedValue(tweet),
     };
@@ -162,9 +178,10 @@ describe('fetchTweet', () => {
     expect(fetchers.syndication).not.toHaveBeenCalled();
   });
 
-  it('アカウントが分からないときは syndication を先に試す', async () => {
+  it('アカウントが分からないときは oEmbed より syndication を先に試す', async () => {
     // oEmbed は /i/web/status/ 形式のURLを受け付けない
     const fetchers = {
+      fxTwitter: none(),
       oEmbed: vi.fn().mockResolvedValue(tweet),
       syndication: vi.fn().mockResolvedValue(tweet),
     };
@@ -177,6 +194,7 @@ describe('fetchTweet', () => {
 
   it('先の経路が失敗したら次に落とす', async () => {
     const fetchers = {
+      fxTwitter: vi.fn().mockRejectedValue(new Error('HTTP 503')),
       oEmbed: vi.fn().mockRejectedValue(new Error('HTTP 404')),
       syndication: vi.fn().mockResolvedValue(tweet),
     };
@@ -184,13 +202,89 @@ describe('fetchTweet', () => {
     expect(await fetchTweet({ id: '1', handle: 'user' }, fetchers)).toBe(tweet);
   });
 
-  it('どちらも取れなければ undefined', async () => {
-    const fetchers = {
-      oEmbed: vi.fn().mockResolvedValue(undefined),
-      syndication: vi.fn().mockResolvedValue(undefined),
-    };
+  it('どれも取れなければ undefined', async () => {
+    const fetchers = { fxTwitter: none(), oEmbed: none(), syndication: none() };
 
     expect(await fetchTweet({ id: '1', handle: 'user' }, fetchers)).toBeUndefined();
+  });
+});
+
+describe('fetchTweetViaFxTwitter', () => {
+  const stubJson = (payload: unknown) => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(JSON.stringify(payload), 'application/json'));
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  };
+
+  it('アカウントが分からなくても叩けるURLにする', () => {
+    expect(fxTwitterUrl({ id: '123', handle: 'user' })).toBe(
+      'https://api.fxtwitter.com/user/status/123'
+    );
+    expect(fxTwitterUrl({ id: '123' })).toBe('https://api.fxtwitter.com/i/status/123');
+  });
+
+  it('本文・作者・引用元・画像の代替テキスト・投票を取る', async () => {
+    const fetchMock = stubJson({
+      code: 200,
+      message: 'OK',
+      tweet: {
+        text: '新しいリリースです',
+        author: { name: 'Claude', screen_name: 'claudeai' },
+        quote: { text: '引用元の本文', author: { name: '元', screen_name: 'orig' } },
+        media: { photos: [{ altText: 'ベンチマークのグラフ' }, { altText: '' }] },
+        poll: { choices: [{ label: '使う' }, { label: '使わない' }] },
+      },
+    });
+
+    const tweet = await fetchTweetViaFxTwitter({ id: '123', handle: 'claudeai' });
+
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://api.fxtwitter.com/claudeai/status/123');
+    expect(tweet).toEqual({
+      id: '123',
+      text: '新しいリリースです',
+      name: 'Claude',
+      handle: 'claudeai',
+      quoted: { text: '引用元の本文', name: '元', handle: 'orig' },
+      extras: ['画像: ベンチマークのグラフ', '投票: 使う / 使わない'],
+    });
+  });
+
+  it('本文がリンクだけの X の記事(Articles)でも中身を取る', async () => {
+    // oEmbed / syndication では本文が URL だけになり、要約が「投稿が紹介された」で終わっていた
+    stubJson({
+      code: 200,
+      tweet: {
+        text: 'https://t.co/abc',
+        author: { name: 'Kensei', screen_name: '0xKense1' },
+        article: {
+          title: 'エージェント設計の5原則',
+          preview_text: 'プレビュー',
+          content: { blocks: [{ text: '第一段落' }, { text: '' }, { text: '第二段落' }] },
+        },
+      },
+    });
+
+    const tweet = await fetchTweetViaFxTwitter({ id: '9', handle: '0xKense1' });
+
+    expect(tweet?.article).toEqual({ title: 'エージェント設計の5原則', text: '第一段落\n第二段落' });
+    expect(tweetTitle(tweet!)).toBe('Kensei(@0xKense1) の記事: エージェント設計の5原則');
+    expect(tweetText(tweet!)).toContain('第二段落');
+  });
+
+  it('記事の本文ブロックが無ければプレビューを使う', async () => {
+    stubJson({ code: 200, tweet: { text: '', article: { preview_text: 'プレビュー本文' } } });
+
+    const tweet = await fetchTweetViaFxTwitter({ id: '9' });
+
+    expect(tweet?.article).toEqual({ text: 'プレビュー本文' });
+  });
+
+  it('本文も記事も無ければ undefined', async () => {
+    stubJson({ code: 404, message: 'NOT_FOUND' });
+    expect(await fetchTweetViaFxTwitter({ id: '1' })).toBeUndefined();
+
+    stubJson({ code: 200, tweet: { text: '  ' } });
+    expect(await fetchTweetViaFxTwitter({ id: '1' })).toBeUndefined();
   });
 });
 

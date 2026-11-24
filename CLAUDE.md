@@ -312,10 +312,12 @@ take injectable `direct` / `viaJina`) — ESM の export は差し替えられ�
    - `fetchArticleViaJina()` fetches `https://r.jina.ai/<url>` for rendered text
    - `fetchArticleFromTwitter()` (`scripts/lib/sources/twitter.ts`) — x.com/twitter.com は
      ログインしないと本文を返さないため、直接取得でも r.jina.ai 経由でも
-     「JavaScriptを有効にしてください」しか取れない。認証不要で本文が取れる
-     publish.twitter.com の oEmbed（公式）を先に、`/i/web/status/...` のように
-     アカウントが分からず oEmbed が使えないときは cdn.syndication.twimg.com（埋め込み
-     ウィジェットが使う非公式API）を先に試す。ポストは140字程度のこともあるので
+     「JavaScriptを有効にしてください」しか取れない。まず api.fxtwitter.com
+     （FxTwitter のJSON API、認証不要）を試す — 長文ポスト・引用元・画像の代替テキスト・
+     投票に加え、oEmbed / syndication では本文がリンクだけになる X の記事(Articles)の
+     中身まで取れる。落ちていれば publish.twitter.com の oEmbed（公式）、`/i/web/status/...`
+     のようにアカウントが分からず oEmbed が使えないときは cdn.syndication.twimg.com（埋め込み
+     ウィジェットが使う非公式API）に落とす。ポストは140字程度のこともあるので
      `MIN_ARTICLE_TEXT_CHARS` の足切りをかけない。プロフィールやトレンドのURL
      （`x.com/i/trending/...`）は要約する本文が存在しないので、取得そのものを行わない
 
@@ -329,7 +331,12 @@ take injectable `direct` / `viaJina`) — ESM の export は差し替えられ�
 3. **AI Summarization**: `GeminiSummarizer.summarize()` asks Gemini (via the `@google/genai`
    SDK) for JSON (`{"summary": ..., "points": [...]}`) using `responseMimeType:
    application/json`, and `parseDigest()` normalizes/truncates it — prompt wording alone
-   doesn't keep the length stable. A per-article failure falls back to `SUMMARY_FALLBACK`,
+   doesn't keep the length stable. 一時的なエラー（429 / 5xx / ネットワーク）は
+   `GEMINI_RETRY_WAITS_MS`（5s/15s/30s）で再試行し、それでも駄目なら
+   `GEMINI_FALLBACK_MODEL`（gemini-2.5-flash-lite）を1回試す — 2026-10-29 の実行は
+   503 "high demand" を1回受けただけで全件の要約を諦め、10/28 の記事が欠けた。
+   400 / 403 のような一時的でないエラーは再試行しない。
+   A per-article failure falls back to `SUMMARY_FALLBACK`,
    and そのブックマークは記事に載せない（「要約を生成できませんでした」だけの見出しは
    読む人にとって価値が無く、front matter は正常なので公開前ゲートでも気づけない）。
    本文が取れなかったもの・要約に失敗したものは理由付きで `SummarizeResult.skipped` に
@@ -372,6 +379,14 @@ rather than only in the prompt. Adjust those constants to change how long the po
 
 `npm run summarize -- --dry-run [--date YYYY-MM-DD]` prints the post instead of
 writing it — useful for checking the output length after a prompt change.
+
+**欠けた日の作り直し**: `--date` 無しの実行（cron）は前日分に加えて、その前
+`CATCH_UP_DAYS`（3）日のうち記事が無い日を `catchUp()` で作り直す。前日しか見ないと、
+1日失敗した日は二度と埋まらない。RSS は1回だけ取る（`memoizeFetchEntries()`）。
+穴埋めの失敗はログとジョブサマリに出すだけで、前日分のコミットは止めない。
+それより古い日は Actions の `Update Blog with Hatena Bookmarks` を workflow_dispatch し、
+`date` 入力に日付を入れる。`--date` 指定時は通常のRSSに対象日が無ければ
+`?date=YYYYMMDD` 付きのRSS（`rssUrlForDate()`）も見る。
 
 ### Docker-based Development
 - **Containerized Environment**: The Astro dev server and the automation scripts run in separate containers

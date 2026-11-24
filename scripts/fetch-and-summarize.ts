@@ -7,6 +7,9 @@
  *
  * 使い方:
  *     npm run summarize -- [--date YYYY-MM-DD] [--dry-run]
+ *
+ * `--date` を付けないときは前日分に加えて、その前 CATCH_UP_DAYS 日のうち記事が
+ * 無い日も作り直す（Gemini の一時的な障害などで1日落ちても、翌日以降の実行で埋まる）。
  */
 
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -19,6 +22,7 @@ import { AbortRun } from './lib/abort.ts';
 import { extractArticleText, type ArticleContent } from './lib/article.ts';
 import { boilerplateReason } from './lib/boilerplate.ts';
 import {
+  addDays,
   formatCivilDate,
   formatDatePath,
   formatJapaneseDate,
@@ -50,7 +54,24 @@ import { displayTitle } from '../src/lib/url.ts';
 
 export const RSS_URL = 'https://b.hatena.ne.jp/Buchi_6uclz1/rss';
 export const GEMINI_MODEL = 'gemini-2.5-flash';
+/**
+ * 混雑(503)やレート制限(429)が続いたときに切り替えるモデル。
+ * 別モデルは別の枠で動くので、同じモデルを待ち続けるより通ることが多い。
+ */
+export const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+/**
+ * 一時的なエラーでの再試行の待ち時間（ミリ秒）。要素数が再試行の回数。
+ * 2026-10-29 の実行は 503 "high demand" を1回受けただけで2件とも要約を諦め、
+ * 2026-10-28 の記事が作られなかった。数十秒待てば戻ることが多い。
+ */
+export const GEMINI_RETRY_WAITS_MS = [5_000, 15_000, 30_000];
 export const POSTS_DIR = '_posts';
+/**
+ * 前日分に加えて、記事が無ければ作り直す過去の日数。
+ * RSS には直近の数十件しか載らないので、遠い日付を見てもブックマークは見つからない。
+ * 2026-10-28 は要約APIの一時的な障害で落ち、翌日の実行は前日分しか見ないため埋まらなかった。
+ */
+export const CATCH_UP_DAYS = 3;
 
 // 記事本文の取得まわり
 export const HTTP_TIMEOUT_MS = 15_000;
@@ -516,32 +537,88 @@ export interface GenerativeClient {
   };
 }
 
+/**
+ * 待てば通る見込みのある Gemini のエラーか。
+ *
+ * SDK の ApiError は `status` に HTTP ステータスを持つが、メッセージに
+ * `{"error":{"code":503,...,"status":"UNAVAILABLE"}}` が入るだけのこともあるので両方を見る。
+ * 400（プロンプト不正）や 403（APIキー）は何度試しても同じなので再試行しない。
+ */
+export function isTransientGeminiError(error: unknown): boolean {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === 'number') return status === 408 || status === 429 || status >= 500;
+
+  const message = error instanceof Error ? error.message : String(error);
+  const code = /"code"\s*:\s*(\d{3})/.exec(message)?.[1];
+  if (code) return code === '408' || code === '429' || Number(code) >= 500;
+  return /UNAVAILABLE|RESOURCE_EXHAUSTED|DEADLINE_EXCEEDED|INTERNAL|overloaded|high demand|fetch failed|ECONNRESET|ETIMEDOUT|timed? ?out/i.test(
+    message
+  );
+}
+
+export interface GeminiSummarizerOptions {
+  model?: string;
+  /** 一時的なエラーが続いたときに切り替えるモデル。null なら切り替えない */
+  fallbackModel?: string | null;
+  client?: GenerativeClient;
+  /** 再試行の待ち時間。要素数が再試行の回数 */
+  retryWaitsMs?: number[];
+  /** テストから待ち時間を潰すために差し替える */
+  wait?: (ms: number) => Promise<void>;
+}
+
 /** Gemini で1件分の短い要約を作る */
 export class GeminiSummarizer implements Summarizer {
   private readonly client: GenerativeClient;
-  private readonly model: string;
+  private readonly models: string[];
+  private readonly retryWaitsMs: number[];
+  private readonly wait: (ms: number) => Promise<void>;
 
-  constructor(
-    apiKey: string,
-    options: { model?: string; client?: GenerativeClient } = {}
-  ) {
+  constructor(apiKey: string, options: GeminiSummarizerOptions = {}) {
     this.client = options.client ?? new GoogleGenAI({ apiKey });
-    this.model = options.model ?? GEMINI_MODEL;
+    const model = options.model ?? GEMINI_MODEL;
+    const fallback =
+      options.fallbackModel === undefined ? GEMINI_FALLBACK_MODEL : options.fallbackModel;
+    this.models = fallback && fallback !== model ? [model, fallback] : [model];
+    this.retryWaitsMs = options.retryWaitsMs ?? GEMINI_RETRY_WAITS_MS;
+    this.wait = options.wait ?? sleep;
   }
 
   async summarize(bookmark: Bookmark, articleText: string): Promise<Digest> {
-    try {
-      const response = await this.client.models.generateContent({
-        model: this.model,
-        contents: buildPrompt(bookmark, articleText),
-        config: generationConfig(),
-      });
-      return parseDigest(response.text ?? '');
-    } catch (error) {
-      // 1記事の失敗で全体を止めない
-      logger.error(`Error generating summary for ${bookmark.url}: ${describeError(error)}`);
-      return digest(SUMMARY_FALLBACK);
+    const contents = buildPrompt(bookmark, articleText);
+
+    for (const [modelIndex, model] of this.models.entries()) {
+      // 本命のモデルは待って再試行し、代替モデルは1回だけ試す
+      const waits = modelIndex === 0 ? this.retryWaitsMs : [];
+
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          const response = await this.client.models.generateContent({
+            model,
+            contents,
+            config: generationConfig(),
+          });
+          return parseDigest(response.text ?? '');
+        } catch (error) {
+          const transient = isTransientGeminiError(error);
+          logger.error(
+            `Error generating summary for ${bookmark.url} (${model}, attempt ${attempt + 1}): ${describeError(error)}`
+          );
+          // 1記事の失敗で全体を止めない。一時的でないエラーは別モデルでも同じ
+          if (!transient) return digest(SUMMARY_FALLBACK);
+
+          const waitMs = waits[attempt];
+          if (waitMs === undefined) break;
+          logger.info(`Retrying in ${waitMs / 1000}s...`);
+          await this.wait(waitMs);
+        }
+      }
+
+      const next = this.models[modelIndex + 1];
+      if (next) logger.warn(`Falling back to ${next} for ${bookmark.url}`);
     }
+
+    return digest(SUMMARY_FALLBACK);
   }
 }
 
@@ -746,6 +823,11 @@ async function reportSkipped(skipped: SkippedBookmark[], total: number): Promise
 
 export interface RunOptions {
   targetDate?: CivilDate;
+  /**
+   * 対象日のブックマークが通常のRSSに無いとき、日付を指定したRSS
+   * （`?date=YYYYMMDD`）も見る。手動で古い日を作り直すとき用
+   */
+  searchByDate?: boolean;
   dryRun?: boolean;
   postsDir?: string;
   deps?: Partial<RunDeps>;
@@ -773,7 +855,13 @@ export async function run(options: RunOptions = {}): Promise<number> {
     return 0;
   }
 
-  const bookmarks = deps.selectBookmarks(entries, target);
+  let bookmarks = deps.selectBookmarks(entries, target);
+  if (bookmarks.length === 0 && options.searchByDate) {
+    // 通常のRSSは直近の数十件だけなので、古い日は日付を指定して取り直す。
+    // はてな側がパラメータを無視しても同じフィードが返るだけで害は無い
+    const dated = await deps.fetchEntries(rssUrlForDate(target));
+    bookmarks = deps.selectBookmarks(dated, target);
+  }
   if (bookmarks.length === 0) {
     logger.info(`No entries from ${formatCivilDate(target)} found`);
     return 0;
@@ -817,6 +905,66 @@ export async function run(options: RunOptions = {}): Promise<number> {
   return (await deps.writePost(digests, target, postsDir)) ? 1 : 0;
 }
 
+/** 対象日を指定したRSSのURL */
+export function rssUrlForDate(target: CivilDate, rssUrl: string = RSS_URL): string {
+  const url = new URL(rssUrl);
+  url.searchParams.set('date', formatCivilDate(target).replace(/-/g, ''));
+  return url.toString();
+}
+
+/**
+ * 前日より前で、記事が無い日を作り直す。
+ *
+ * ここでの失敗は報告するだけで終了コードにしない。前日分の記事は作れているので、
+ * 過去の穴埋めの失敗でそのコミットまで止める理由が無い。
+ * 作り直せた日・作れなかった日はジョブサマリにも残す。
+ */
+export async function catchUp(
+  today: CivilDate,
+  options: { days?: number; postsDir?: string; deps?: Partial<RunDeps> } = {}
+): Promise<number> {
+  const days = options.days ?? CATCH_UP_DAYS;
+  const postsDir = options.postsDir ?? POSTS_DIR;
+  let created = 0;
+  const failures: string[] = [];
+
+  for (let back = 2; back <= days + 1; back += 1) {
+    const target = addDays(today, -back);
+    if (await fileExists(postPath(target, postsDir))) continue;
+
+    logger.info(`Catching up missing post for ${formatCivilDate(target)}`);
+    try {
+      const count = await run({ targetDate: target, postsDir, deps: options.deps });
+      if (count > 0) logger.warn(`Recreated missing post for ${formatCivilDate(target)}`);
+      created += count;
+    } catch (error) {
+      const message = error instanceof AbortRun ? error.message : describeError(error);
+      logger.warn(`Could not catch up ${formatCivilDate(target)}: ${message}`);
+      failures.push(`- ${formatCivilDate(target)}: ${message.split('\n')[0]}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    await appendJobSummary(['### 過去の欠けた日の作り直しに失敗', '', ...failures].join('\n'));
+  }
+  return created;
+}
+
+/** 同じRSSを何度も取りに行かないよう、URLごとに結果を覚えておく */
+export function memoizeFetchEntries(
+  fetcher: (rssUrl?: string) => Promise<FeedEntry[]>
+): (rssUrl?: string) => Promise<FeedEntry[]> {
+  const cache = new Map<string, Promise<FeedEntry[]>>();
+  return (rssUrl = RSS_URL) => {
+    let entries = cache.get(rssUrl);
+    if (!entries) {
+      entries = fetcher(rssUrl);
+      cache.set(rssUrl, entries);
+    }
+    return entries;
+  };
+}
+
 export interface CliArgs {
   date?: CivilDate;
   dryRun: boolean;
@@ -848,7 +996,15 @@ export function parseArgs(argv: string[]): CliArgs {
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   try {
     const args = parseArgs(argv);
-    await run({ targetDate: args.date, dryRun: args.dryRun });
+    if (args.date) {
+      await run({ targetDate: args.date, dryRun: args.dryRun, searchByDate: true });
+    } else {
+      const fetchEntriesOnce = memoizeFetchEntries((rssUrl) => fetchEntries(rssUrl));
+      const deps = { fetchEntries: fetchEntriesOnce };
+      await run({ dryRun: args.dryRun, deps });
+      // 前日分が失敗したら AbortRun で抜けるので、ここには来ない
+      if (!args.dryRun) await catchUp(jstDateOf(new Date()), { deps });
+    }
   } catch (error) {
     if (error instanceof AbortRun) {
       logger.error(error.message);
