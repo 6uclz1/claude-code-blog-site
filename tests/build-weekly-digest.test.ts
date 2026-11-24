@@ -50,7 +50,7 @@ title: はてなブックマーク 2026年07月21日 の記事まとめ (1件)
 `;
 
 // 週刊まとめが使うのはタイトルとURLだけ。
-// summary（共有用の説明文で使う）も付いてくるので toMatchObject で見る。
+// summary（フィードの本文で使う）も付いてくるので toMatchObject で見る。
 describe('extractBookmarks', () => {
   it('現在の形式を読む', () => {
     expect(extractBookmarks(bodyOf(NEW_FORMAT))).toMatchObject([

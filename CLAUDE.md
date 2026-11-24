@@ -134,8 +134,8 @@ docker compose run --rm scripts npm test
   - `src/lib/format.ts`: astro に依存しない整形（permalink→param, 日付, description）。
     `posts.ts` から再エクスポートしているので import 元は変わらない
   - `src/lib/bookmarks.ts`: 本文からブックマークの見出し・URL・1行要約を抽出
-    （OGP と `/sites/`、週刊まとめが共用）
-  - `src/lib/share.ts`: 共有用（og:description / twitter:description）の説明文を組み立てる
+    （フィードと `/sites/`、週刊まとめが共用）
+  - `src/lib/feed-summary.ts`: フィードの entry 本文（ブックマークのタイトル・1行要約・URL）を組み立てる
   - `src/lib/xml.ts`: フィードの XML エスケープ
   - `src/lib/llms.ts`: `/llms.txt` の本文（AIエージェント向けの案内）
   - `src/lib/post-markdown.ts`: 記事の Markdown 版（`.md`）の組み立てとそのパス規則
@@ -190,33 +190,31 @@ docker compose run --rm scripts npm test
   `/`, later pages are `/page2/`, `/page3/`, … (the Jekyll `paginate_path` is preserved)
 - **Atom feed**: `src/pages/feed.xml.ts` emits `/feed.xml` in the same Atom format
   jekyll-feed produced, so existing subscribers and the publishing gate keep working.
-  Entries carry **no `<summary>`** — only title / link / dates / author. Slack's RSS
-  integration prints the summary *and* unfurls the link, so a summary here means the same
-  bookmark list appears twice in one message. The article's content is carried by the OGP
-  description instead (below). Everything inside a `type="html"` element is escaped twice,
-  so a title like `<Suspense>` is not swallowed as a tag
-- **SEO / 共有時の説明文**: OGP / Twitter Card meta in `BaseLayout` (with the shared
-  `public/og.png`), `BlogPosting` JSON-LD on article pages, `sitemap.xml`, a `404.astro`
-  page, and `noindex, follow` + `rel=prev/next` on the paginated pages (`/page2/` and later).
-  Article pages pass a separate `ogDescription` built by `src/lib/share.ts` from the post
-  body: per bookmark a `・`-prefixed title line plus the one-line summary indented under it
-  (`　`), joined with real newlines so Slack's link unfurl breaks the lines. Because the
-  feed no longer carries a summary, this is the only place a Slack reader sees what is in
-  the post, so the list is **not** trimmed to a preview: every bookmark of the day is
-  included (~600 chars on a normal day). The bullet points under each summary are
-  deliberately left out — the longer the description, the more likely the client truncates
-  it, and what disappears is whole bookmarks off the end.
-  That is also why degradation drops **summaries** first: if the summaries do not fit in
-  `SHARE_DESCRIPTION_MAX_CHARS` (1500) the whole thing falls back to the title-only list,
-  so every bookmark stays visible instead of a few getting detail and the rest vanishing;
-  only if the titles alone still do not fit does the overflow collapse into `ほかN件`.
-  Across `_posts/` today, 327 of 332 posts fit with summaries.
+  Everything inside a `type="html"` element is escaped twice, so a title like
+  `<Suspense>` is not swallowed as a tag.
+  Each entry carries a `<summary type="text">` built by `src/lib/feed-summary.ts` from the
+  post body: per bookmark a `・`-prefixed title line with the one-line summary and the URL
+  indented under it (`　`), bookmarks separated by a blank line. `type="text"` so the
+  newlines survive as newlines. This is what a Slack reader sees: Slack's RSS integration
+  prints the summary as the message body **and** unfurls the link, so the article page's
+  OGP description is kept to the one-sentence `excerpt` (see below) — otherwise the same
+  bookmark list would appear twice in one message. The bullet points under each summary
+  are deliberately left out of the feed.
+  Degradation keeps every bookmark visible rather than giving a few detail and dropping
+  the rest: if the text exceeds `FEED_SUMMARY_MAX_CHARS` (2000) the URL lines go first
+  (the post links them), then the summaries, and only if the titles alone still do not fit
+  does the overflow collapse into `ほかN件`. Across `_posts/` today 406 of 435 bookmark
+  posts fit with URLs and 426 without. Posts without bookmark headings (the weekly digest)
+  fall back to `excerpt`.
   `src/lib/bookmarks.ts` supplies the summary — the first prose line after the heading,
   skipping sub-headings, bullets, `**要点**`-style label lines and the legacy `**URL:**`
   line, which lands on the generated one-liner in current posts and on the opening of
-  「詳細な要約」 in the legacy ones. Posts without bookmark headings fall back to `excerpt`.
-  `<meta name="description">` and the JSON-LD keep the prose `excerpt` — a bullet list is
-  for the share preview, not for search results
+  「詳細な要約」 in the legacy ones
+- **SEO / 共有時の説明文**: OGP / Twitter Card meta in `BaseLayout` (with the shared
+  `public/og.png`), `BlogPosting` JSON-LD on article pages, `sitemap.xml`, a `404.astro`
+  page, and `noindex, follow` + `rel=prev/next` on the paginated pages (`/page2/` and later).
+  `og:description` / `twitter:description` / `<meta name="description">` / JSON-LD all use
+  the prose `excerpt` — the bookmark list lives in the feed, not in the unfurl card
 - **Post navigation**: article pages link to the next/previous post in the feed order
   (computed in `[...slug].astro` from the sorted list), plus the back link to the index
 - **Search**: `/search/` is Pagefind. The index is built by `npm run build`'s second step
@@ -237,7 +235,7 @@ docker compose run --rm scripts npm test
   その受け皿が `/index.json`（`src/lib/search-index.ts`）で、全記事の日付・タイトル・
   HTML版とMarkdown版のURL・ブックマーク（タイトル / リンク先 / ホスト名 / 1行要約）を
   1ファイルに入れる。1件取れば手元で絞り込めて、当たった記事の `markdown` で本文に届く。
-  ブックマークの抽出は `/sites/` や共有用の説明文と同じ `src/lib/bookmarks.ts` を使う。
+  ブックマークの抽出は `/sites/` やフィードの本文と同じ `src/lib/bookmarks.ts` を使う。
   今の記事数（333本 / ブックマーク1,178件）で約900KB — これ以上大きくして通しで読めない
   サイズにするより、年ごとに割る方を先に検討する。ビルド時刻のような毎回変わる値は
   入れない（差分が毎日出るため）
@@ -439,7 +437,7 @@ writing it — useful for checking the output length after a prompt change.
   `src/lib/posts.ts` is excluded from the coverage config — it imports `astro:content` and can
   never be tested, so counting it as 0% would make the total useless as a threshold
 - **Frontend Tests**: only modules that do not import `astro:content` can be tested this way,
-  which is why the pure helpers live in `format.ts` / `bookmarks.ts` / `share.ts` / `xml.ts`
+  which is why the pure helpers live in `format.ts` / `bookmarks.ts` / `feed-summary.ts` / `xml.ts`
   rather than in `posts.ts`
 - **Dependency injection instead of monkeypatching**: ESM exports cannot be replaced at
   runtime, so anything a test needs to control is a parameter — `run({ deps })`,

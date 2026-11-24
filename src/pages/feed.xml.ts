@@ -5,15 +5,19 @@ import {
   postUpdated,
   type Post,
 } from '../lib/posts';
+import { feedSummary } from '../lib/feed-summary';
 import { escapeHtmlText, escapeXml } from '../lib/xml';
 import { SITE } from '../site';
 
 // jekyll-feed と同じ Atom 形式で出力する。
 // 既存の購読者と公開前ゲート(scripts/validate-build.ts)がこの形式を前提にしている。
 //
-// entry には summary を入れない。Slack の RSS 連携は summary を本文として出したうえで
-// リンクを展開して OGP の説明文も出すため、両方に中身があると同じ内容が二重に並ぶ。
-// 記事の中身は OGP 側（src/lib/share.ts）だけで伝える。
+// entry の summary にはブックマークの一覧（タイトル・1行要約・URL）を入れる。
+// Slack の RSS 連携は summary をメッセージ本文として出したうえでリンクも展開するので、
+// 記事ページの OGP の説明文は excerpt の1文にとどめ、同じ一覧が二重に並ばないようにする
+// （src/lib/feed-summary.ts）。
+// type="text" にするのは、改行をそのまま改行として読ませるため（HTML にすると
+// リーダーによっては改行が潰れる）。
 
 const absoluteUrl = (site: URL, path: string) =>
   new URL(path.replace(/^\/+/, ''), site).href;
@@ -39,13 +43,16 @@ export const GET: APIRoute = async ({ site }) => {
   const entry = (post: Post) => {
     const url = absoluteUrl(baseUrl, `${permalinkToParam(post.data.permalink)}/`);
     const published = post.data.date.toISOString();
+    const summary = feedSummary(post.body ?? '', post.data.excerpt);
     return `  <entry>
     <title type="html">${escapeHtmlText(post.data.title)}</title>
     <link href="${escapeXml(url)}" rel="alternate" type="text/html" title="${escapeXml(post.data.title)}"/>
     <published>${published}</published>
     <updated>${postUpdated(post).toISOString()}</updated>
     <id>${escapeXml(url)}</id>
-    <author><name>${escapeXml(SITE.author)}</name></author>
+    <author><name>${escapeXml(SITE.author)}</name></author>${
+      summary ? `\n    <summary type="text">${escapeXml(summary)}</summary>` : ''
+    }
   </entry>`;
   };
 
