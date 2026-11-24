@@ -4,10 +4,13 @@
  * x.com はログインしないと本文を返さないため、HTMLを直接取っても
  * r.jina.ai を経由しても「JavaScriptを有効にしてください」しか得られない
  * （実際に過去の記事がその内容で要約されている）。認証なしで本文が取れる
- * 経路は次の2つで、公式で安定している oEmbed を先に試す。
+ * 経路は次の3つで、取れる情報がいちばん多い FxTwitter を先に試す。
  *
- *  1. publish.twitter.com の oEmbed … 公式・認証不要。埋め込み用HTMLから本文を取る
- *  2. cdn.syndication.twimg.com … 埋め込みウィジェットが使う非公式API。
+ *  1. api.fxtwitter.com … FxTwitter（OSS の埋め込み修正サービス）のJSON API。
+ *     認証不要で、長文ポスト・引用元・画像の代替テキスト・投票の選択肢に加えて、
+ *     oEmbed / syndication では本文が空になる X の「記事」(Articles) まで取れる
+ *  2. publish.twitter.com の oEmbed … 公式・認証不要。埋め込み用HTMLから本文を取る
+ *  3. cdn.syndication.twimg.com … 埋め込みウィジェットが使う非公式API。
  *     本文・作者・引用ツイートまでJSONで取れるが、仕様変更で壊れうる
  *
  * はてなのRSSはポストのタイトルをURLのまま返すことが多いので、
@@ -20,12 +23,15 @@ import { fetchJson } from '../http.ts';
 import { describeError, logger } from '../logger.ts';
 
 export const TWITTER_HOSTS = ['twitter.com', 'x.com'];
+export const FXTWITTER_ENDPOINT = 'https://api.fxtwitter.com';
 export const OEMBED_ENDPOINT = 'https://publish.twitter.com/oembed';
 export const SYNDICATION_ENDPOINT = 'https://cdn.syndication.twimg.com/tweet-result';
 export const TWITTER_TIMEOUT_MS = 15_000;
 
 /** 見出しに載せるポスト本文の長さ */
 export const TITLE_SNIPPET_MAX_CHARS = 48;
+/** 要約に渡す X の記事(Articles)本文の上限。要約側でも切るが、無駄に組み立てない */
+export const ARTICLE_BODY_MAX_CHARS = 6000;
 
 /** 取得できたポスト1件 */
 export interface Tweet {
@@ -36,6 +42,10 @@ export interface Tweet {
   text: string;
   /** 引用元のポスト（あれば） */
   quoted?: { name?: string; handle?: string; text: string };
+  /** X の記事(Articles)。ポスト本文はリンクだけで、中身はこちらにある */
+  article?: { title?: string; text: string };
+  /** 画像の代替テキストや投票の選択肢など、本文の外にある補足 */
+  extras?: string[];
 }
 
 /** URLから取り出したポストの参照 */
@@ -87,6 +97,104 @@ export function parseTweetRef(rawUrl: string): TweetRef | undefined {
 /** oEmbed に渡す正規化したURL（`?s=20` のような余計なクエリを落とす） */
 export function canonicalTweetUrl(ref: TweetRef): string {
   return `https://twitter.com/${ref.handle ?? 'i/web'}/status/${ref.id}`;
+}
+
+// --------------------------------------------------------------------------
+// FxTwitter
+// --------------------------------------------------------------------------
+
+interface FxAuthor {
+  name?: string;
+  screen_name?: string;
+}
+
+interface FxArticleBlock {
+  text?: string;
+}
+
+interface FxTweet {
+  text?: string;
+  author?: FxAuthor;
+  quote?: FxTweet;
+  media?: { photos?: { altText?: string }[]; all?: { altText?: string }[] };
+  poll?: { choices?: { label?: string }[] };
+  article?: {
+    title?: string;
+    preview_text?: string;
+    content?: { blocks?: FxArticleBlock[] };
+  };
+}
+
+interface FxResponse {
+  code?: number;
+  tweet?: FxTweet;
+}
+
+/** FxTwitter の API URL。アカウント名は無視されるので、分からなければ `i` を置く */
+export function fxTwitterUrl(ref: TweetRef): string {
+  return `${FXTWITTER_ENDPOINT}/${ref.handle ?? 'i'}/status/${ref.id}`;
+}
+
+const trimmed = (value: string | undefined) => value?.trim() ?? '';
+
+/** X の記事(Articles)の本文。ブロックを段落としてつなぐ */
+export function fxArticle(article: FxTweet['article']): Tweet['article'] | undefined {
+  if (!article) return undefined;
+  const blocks = (article.content?.blocks ?? []).map((block) => trimmed(block.text)).filter(Boolean);
+  const text = (blocks.length > 0 ? blocks.join('\n') : trimmed(article.preview_text)).slice(
+    0,
+    ARTICLE_BODY_MAX_CHARS
+  );
+  const title = trimmed(article.title);
+  if (!text && !title) return undefined;
+  return title ? { title, text } : { text };
+}
+
+/** 画像の代替テキストと投票の選択肢。本文が短いポストでは要約の手がかりになる */
+export function fxExtras(tweet: FxTweet): string[] {
+  const extras: string[] = [];
+  const media = tweet.media?.photos ?? tweet.media?.all ?? [];
+  for (const item of media) {
+    const alt = trimmed(item.altText);
+    if (alt) extras.push(`画像: ${alt}`);
+  }
+  const choices = (tweet.poll?.choices ?? []).map((choice) => trimmed(choice.label)).filter(Boolean);
+  if (choices.length > 0) extras.push(`投票: ${choices.join(' / ')}`);
+  return extras;
+}
+
+export async function fetchTweetViaFxTwitter(ref: TweetRef): Promise<Tweet | undefined> {
+  const payload = await fetchJson<FxResponse>(fxTwitterUrl(ref), {
+    headers: { Accept: 'application/json' },
+    timeoutMs: TWITTER_TIMEOUT_MS,
+    retries: 1,
+  });
+  const source = payload?.tweet;
+  if (!source) return undefined;
+
+  const text = trimmed(source.text);
+  const article = fxArticle(source.article);
+  // 記事(Articles)はポスト本文がリンクだけで空になることがある
+  if (!text && !article) return undefined;
+
+  const tweet: Tweet = { id: ref.id, text };
+  const name = source.author?.name;
+  const handle = source.author?.screen_name ?? ref.handle;
+  if (name) tweet.name = name;
+  if (handle) tweet.handle = handle;
+  if (article) tweet.article = article;
+
+  const quotedText = trimmed(source.quote?.text) || trimmed(source.quote?.article?.title);
+  if (quotedText) {
+    const quoted: NonNullable<Tweet['quoted']> = { text: quotedText };
+    if (source.quote?.author?.name) quoted.name = source.quote.author.name;
+    if (source.quote?.author?.screen_name) quoted.handle = source.quote.author.screen_name;
+    tweet.quoted = quoted;
+  }
+
+  const extras = fxExtras(source);
+  if (extras.length > 0) tweet.extras = extras;
+  return tweet;
 }
 
 // --------------------------------------------------------------------------
@@ -197,11 +305,13 @@ export async function fetchTweetViaSyndication(ref: TweetRef): Promise<Tweet | u
 // --------------------------------------------------------------------------
 
 export interface TweetFetchers {
+  fxTwitter: (ref: TweetRef) => Promise<Tweet | undefined>;
   oEmbed: (ref: TweetRef) => Promise<Tweet | undefined>;
   syndication: (ref: TweetRef) => Promise<Tweet | undefined>;
 }
 
 const defaultFetchers: TweetFetchers = {
+  fxTwitter: fetchTweetViaFxTwitter,
   oEmbed: fetchTweetViaOEmbed,
   syndication: fetchTweetViaSyndication,
 };
@@ -218,6 +328,8 @@ const stripUrls = (text: string) => text.replace(/https?:\/\/\S+/g, '').replace(
 /** 見出しに使うタイトル。はてなのRSSがURLしか返さないポスト用 */
 export function tweetTitle(tweet: Tweet): string {
   const author = authorLabel(tweet) ?? 'X';
+  // 記事(Articles)はポスト本文がリンクだけなので、記事のタイトルを見出しにする
+  if (tweet.article?.title) return `${author} の記事: ${tweet.article.title}`;
   const snippet = stripUrls(tweet.text);
   if (!snippet) return `${author} のポスト`;
   const shortened =
@@ -232,12 +344,19 @@ export function tweetText(tweet: Tweet): string {
   const lines: string[] = [];
   const author = authorLabel(tweet);
   if (author) lines.push(`${author} のポスト:`);
-  lines.push(tweet.text);
+  if (tweet.text) lines.push(tweet.text);
+
+  if (tweet.article) {
+    if (tweet.article.title) lines.push(`記事タイトル: ${tweet.article.title}`);
+    if (tweet.article.text) lines.push(tweet.article.text);
+  }
 
   if (tweet.quoted) {
     const quotedAuthor = authorLabel(tweet.quoted);
     lines.push(`引用元${quotedAuthor ? `(${quotedAuthor})` : ''}: ${tweet.quoted.text}`);
   }
+
+  lines.push(...(tweet.extras ?? []));
 
   return lines.join('\n');
 }
@@ -245,16 +364,17 @@ export function tweetText(tweet: Tweet): string {
 /**
  * ポストを取得する。取れなければ undefined。
  *
- * アカウント名が分かるときは公式の oEmbed を先に、分からないとき
- * （`/i/web/status/...`）は oEmbed が受け付けないので syndication を先に試す。
+ * 取れる情報がいちばん多い FxTwitter を先に試す。FxTwitter が落ちているときは、
+ * アカウント名が分かれば公式の oEmbed を、分からないとき（`/i/web/status/...`）は
+ * oEmbed が受け付けないので syndication を次に試す。
  */
 export async function fetchTweet(
   ref: TweetRef,
   fetchers: TweetFetchers = defaultFetchers
 ): Promise<Tweet | undefined> {
   const order: (keyof TweetFetchers)[] = ref.handle
-    ? ['oEmbed', 'syndication']
-    : ['syndication', 'oEmbed'];
+    ? ['fxTwitter', 'oEmbed', 'syndication']
+    : ['fxTwitter', 'syndication', 'oEmbed'];
 
   for (const name of order) {
     try {

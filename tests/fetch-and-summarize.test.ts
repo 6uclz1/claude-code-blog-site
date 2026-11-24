@@ -5,7 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AbortRun,
+  CATCH_UP_DAYS,
+  catchUp,
+  memoizeFetchEntries,
+  rssUrlForDate,
+  GEMINI_FALLBACK_MODEL,
+  GEMINI_MODEL,
   GeminiSummarizer,
+  isTransientGeminiError,
   MAX_POINTS,
   POINT_MAX_CHARS,
   RSS_RETRY_COUNT,
@@ -29,6 +36,7 @@ import {
   writePost,
   yesterdayInJst,
   type ArticleFetchers,
+  type RunDeps,
   type ArticleOutcome,
   type Bookmark,
   type GenerativeClient,
@@ -504,14 +512,80 @@ describe('GeminiSummarizer', () => {
     expect(params.config.responseMimeType).toBe('application/json');
   });
 
-  it('APIエラーはフォールバック文言にする', async () => {
-    const { client } = clientWith(async () => {
-      throw new Error('API Error');
+  it('一時的でないAPIエラーは再試行せずフォールバック文言にする', async () => {
+    const { client, generateContent } = clientWith(async () => {
+      throw Object.assign(new Error('API key not valid'), { status: 400 });
     });
+    const wait = vi.fn(async (_ms: number) => {});
 
-    const result = await new GeminiSummarizer('key', { client }).summarize(bookmark, '記事本文');
+    const result = await new GeminiSummarizer('key', { client, wait }).summarize(bookmark, '記事本文');
 
     expect(result).toEqual(digest(SUMMARY_FALLBACK, []));
+    expect(generateContent).toHaveBeenCalledTimes(1);
+    expect(wait).not.toHaveBeenCalled();
+  });
+
+  it('503 は待って再試行する', async () => {
+    // 2026-10-29 の実行はこれを1回受けただけで記事を作れなかった
+    const overloaded = new Error(
+      '{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}'
+    );
+    let calls = 0;
+    const { client, generateContent } = clientWith(async () => {
+      calls += 1;
+      if (calls < 3) throw overloaded;
+      return { text: '{"summary": "戻った。", "points": []}' };
+    });
+    const wait = vi.fn(async (_ms: number) => {});
+
+    const result = await new GeminiSummarizer('key', {
+      client,
+      wait,
+      retryWaitsMs: [10, 20, 30],
+    }).summarize(bookmark, '記事本文');
+
+    expect(result).toEqual(digest('戻った。', []));
+    expect(wait.mock.calls.map(([ms]) => ms)).toEqual([10, 20]);
+    expect(generateContent.mock.calls.every(([params]) => params.model === GEMINI_MODEL)).toBe(true);
+  });
+
+  it('再試行しても混雑が続けば代替モデルに切り替える', async () => {
+    const { client, generateContent } = clientWith(async () => {
+      throw Object.assign(new Error('UNAVAILABLE'), { status: 503 });
+    });
+    generateContent.mockImplementation(async (params: GenerateParams) => {
+      if (params.model === GEMINI_FALLBACK_MODEL) return { text: '{"summary": "代替。", "points": []}' };
+      throw Object.assign(new Error('UNAVAILABLE'), { status: 503 });
+    });
+
+    const result = await new GeminiSummarizer('key', {
+      client,
+      wait: async () => {},
+      retryWaitsMs: [1, 1],
+    }).summarize(bookmark, '記事本文');
+
+    expect(result).toEqual(digest('代替。', []));
+    expect(generateContent.mock.calls.map(([params]) => params.model)).toEqual([
+      GEMINI_MODEL,
+      GEMINI_MODEL,
+      GEMINI_MODEL,
+      GEMINI_FALLBACK_MODEL,
+    ]);
+  });
+
+  it('代替モデルでも駄目ならフォールバック文言にする', async () => {
+    const { client, generateContent } = clientWith(async () => {
+      throw Object.assign(new Error('RESOURCE_EXHAUSTED'), { status: 429 });
+    });
+
+    const result = await new GeminiSummarizer('key', {
+      client,
+      wait: async () => {},
+      retryWaitsMs: [1],
+    }).summarize(bookmark, '記事本文');
+
+    expect(result.summary).toBe(SUMMARY_FALLBACK);
+    expect(generateContent).toHaveBeenCalledTimes(3);
   });
 
   it('応答が空でもフォールバック文言にする', async () => {
@@ -520,6 +594,18 @@ describe('GeminiSummarizer', () => {
     const result = await new GeminiSummarizer('key', { client }).summarize(bookmark, '記事本文');
 
     expect(result.summary).toBe(SUMMARY_FALLBACK);
+  });
+});
+
+describe('isTransientGeminiError', () => {
+  it('ステータスかメッセージから待てば通るエラーかを判定する', () => {
+    expect(isTransientGeminiError(Object.assign(new Error('x'), { status: 503 }))).toBe(true);
+    expect(isTransientGeminiError(Object.assign(new Error('x'), { status: 429 }))).toBe(true);
+    expect(isTransientGeminiError(Object.assign(new Error('x'), { status: 400 }))).toBe(false);
+    expect(isTransientGeminiError(new Error('{"error":{"code":503,"status":"UNAVAILABLE"}}'))).toBe(true);
+    expect(isTransientGeminiError(new Error('{"error":{"code":403,"status":"PERMISSION_DENIED"}}'))).toBe(false);
+    expect(isTransientGeminiError(new TypeError('fetch failed'))).toBe(true);
+    expect(isTransientGeminiError(new Error('API Error'))).toBe(false);
   });
 });
 
@@ -793,6 +879,25 @@ describe('run', () => {
     expect(stubs.writePost).toHaveBeenCalledTimes(1);
   });
 
+  it('searchByDate なら通常のRSSに無い日を日付指定のRSSで探す', async () => {
+    const stubs = deps({
+      selectBookmarks: vi
+        .fn()
+        .mockReturnValueOnce([])
+        .mockReturnValueOnce([bookmarkA]),
+    });
+
+    expect(await run({ targetDate: target, postsDir, deps: stubs, searchByDate: true })).toBe(1);
+    expect(stubs.fetchEntries).toHaveBeenLastCalledWith(rssUrlForDate(target));
+  });
+
+  it('searchByDate が無ければ日付指定のRSSは見ない', async () => {
+    const stubs = deps({ selectBookmarks: vi.fn().mockReturnValue([]) });
+
+    expect(await run({ targetDate: target, postsDir, deps: stubs })).toBe(0);
+    expect(stubs.fetchEntries).toHaveBeenCalledTimes(1);
+  });
+
   it('正常系では記事を1本作る', async () => {
     const stubs = deps();
 
@@ -864,5 +969,72 @@ describe('parseArgs', () => {
   it('日付として読めない指定は中断させる', () => {
     expect(() => parseArgs(['--date', '2025/06/21'])).toThrow(AbortRun);
     expect(() => parseArgs(['--nope'])).toThrow(AbortRun);
+  });
+});
+
+describe('rssUrlForDate', () => {
+  it('対象日を YYYYMMDD で付ける', () => {
+    expect(rssUrlForDate(civilDate(2026, 10, 28))).toBe(
+      'https://b.hatena.ne.jp/Buchi_6uclz1/rss?date=20261028'
+    );
+  });
+});
+
+describe('memoizeFetchEntries', () => {
+  it('同じURLのRSSは1回だけ取りに行く', async () => {
+    const fetcher = vi.fn().mockResolvedValue([]);
+    const fetchOnce = memoizeFetchEntries(fetcher);
+
+    await fetchOnce();
+    await fetchOnce();
+    await fetchOnce('https://example.com/rss');
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('catchUp', () => {
+  let tmp: { dir: string; cleanup: () => Promise<void> };
+  let postsDir: string;
+  // 実行日。前日(11/23)は通常の run が担当し、catchUp はその前を見る
+  const today = civilDate(2026, 11, 24);
+
+  beforeEach(async () => {
+    vi.stubEnv('GEMINI_API_KEY', 'test_api_key');
+    tmp = await createTempDir();
+    postsDir = path.join(tmp.dir, '_posts');
+    await mkdir(postsDir, { recursive: true });
+  });
+  afterEach(() => tmp.cleanup());
+
+  const bookmark: Bookmark = { title: 'A', url: 'https://example.com/1' };
+  const deps = (summarize: RunDeps['summarizeBookmarks']) => ({
+    fetchEntries: vi.fn().mockResolvedValue([{ title: 'A', link: bookmark.url }]),
+    selectBookmarks: vi.fn().mockReturnValue([bookmark]),
+    summarizeBookmarks: vi.fn(summarize),
+    writePost: vi.fn().mockResolvedValue(true),
+    createSummarizer: vi.fn().mockReturnValue({ summarize: vi.fn() }),
+  });
+
+  it('記事の無い過去の日だけを作り直す', async () => {
+    // 11/22 はある、11/21 と 11/20 が欠けている
+    await writeFile(postPath(civilDate(2026, 11, 22), postsDir), '---\n---\n');
+    const stubs = deps(async () => ({ digests: [[bookmark, digest('要約。')]], skipped: [] }));
+
+    expect(await catchUp(today, { postsDir, deps: stubs })).toBe(2);
+
+    const targets = stubs.writePost.mock.calls.map(([, target]) => target);
+    expect(targets).toEqual([civilDate(2026, 11, 21), civilDate(2026, 11, 20)]);
+    expect(CATCH_UP_DAYS).toBe(3);
+  });
+
+  it('作り直しに失敗しても投げずに次の日へ進む', async () => {
+    const stubs = deps(async () => ({
+      digests: [],
+      skipped: [{ bookmark, reason: '要約の生成に失敗' }],
+    }));
+
+    await expect(catchUp(today, { postsDir, deps: stubs, days: 2 })).resolves.toBe(0);
+    expect(stubs.summarizeBookmarks).toHaveBeenCalledTimes(2);
   });
 });
