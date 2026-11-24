@@ -6,10 +6,14 @@ export type Post = CollectionEntry<'posts'>;
 
 // 純粋な整形処理は format.ts にある（astro:content を読まないので単体テストできる）。
 // 既存の import 元を変えずに済むよう、ここから再エクスポートする。
-export { formatDateJa, permalinkToParam, toDescription, yearOf } from './format';
-
-/** Jekyll の paginate 設定と同じく1ページあたり10記事 */
-export const PAGE_SIZE = 10;
+export {
+  formatDateJa,
+  PAGE_SIZE,
+  pageCount,
+  permalinkToParam,
+  toDescription,
+  yearOf,
+} from './format';
 
 /** 記事を新しい順に取得する（Jekyll の site.posts と同じ並び） */
 export async function getSortedPosts(): Promise<Post[]> {

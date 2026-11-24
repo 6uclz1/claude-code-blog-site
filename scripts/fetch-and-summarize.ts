@@ -5,6 +5,11 @@
  * 1ブックマークあたり "1行サマリ + 箇条書き最大3点" に固定し、
  * モデルの出力が長すぎる場合はスクリプト側で切り詰める（プロンプトだけでは長さが安定しないため）。
  *
+ * 各段階の実装は scripts/lib/ にある。このファイルはそれらをつなぐだけ:
+ *   - bookmark-feed.ts  RSS の取得と対象日のブックマークの選別
+ *   - article-fetch.ts  記事本文の取得（経路の選択と定型文の除外）
+ *   - gemini.ts         要約の生成と整形
+ *
  * 使い方:
  *     npm run summarize -- [--date YYYY-MM-DD] [--dry-run]
  *
@@ -12,59 +17,47 @@
  * 無い日も作り直す（Gemini の一時的な障害などで1日落ちても、翌日以降の実行で埋まる）。
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
-import { GoogleGenAI, type GenerateContentConfig } from '@google/genai';
 
 import { AbortRun } from './lib/abort.ts';
-import { extractArticleText, type ArticleContent } from './lib/article.ts';
-import { boilerplateReason } from './lib/boilerplate.ts';
+import { fetchArticle, type ArticleContent, type ArticleOutcome } from './lib/article-fetch.ts';
+import {
+  fetchEntries,
+  memoizeFetchEntries,
+  rssUrlForDate,
+  selectBookmarks,
+  type Bookmark,
+} from './lib/bookmark-feed.ts';
+import { parseFlags, runIfMain } from './lib/cli.ts';
 import {
   addDays,
   formatCivilDate,
   formatDatePath,
   formatJapaneseDate,
-  isSameDate,
   jstDateOf,
   parseCivilDate,
-  parseCompactCivilDate,
-  parseInstant,
   postDateStamp,
   yesterdayInJst,
   type CivilDate,
 } from './lib/date.ts';
 import { buildFrontMatter } from './lib/frontmatter.ts';
-import { fileExists } from './lib/fs.ts';
-import { decodeBody, fetchBytes, fetchText, isTextLike, USER_AGENT } from './lib/http.ts';
+import { fileExists, writeFileIfAbsent } from './lib/fs.ts';
+import { GeminiSummarizer, SUMMARY_FALLBACK, type Digest, type Summarizer } from './lib/gemini.ts';
 import { describeError, logger } from './lib/logger.ts';
 import { markdownLink } from './lib/markdown.ts';
-import { parseFeed, type FeedEntry } from './lib/rss.ts';
-import {
-  fetchTweet,
-  isTwitterUrl,
-  parseTweetRef,
-  tweetText,
-  tweetTitle,
-} from './lib/sources/twitter.ts';
+import type { FeedEntry } from './lib/rss.ts';
+import { sleep } from './lib/sleep.ts';
 import { appendJobSummary } from './lib/summary.ts';
 // 表示用のタイトル整形はサイト側（フィード・/sites/）と同じ実装を使う
 import { displayTitle } from '../src/lib/url.ts';
 
-export const RSS_URL = 'https://b.hatena.ne.jp/Buchi_6uclz1/rss';
-export const GEMINI_MODEL = 'gemini-2.5-flash';
-/**
- * 混雑(503)やレート制限(429)が続いたときに切り替えるモデル。
- * 別モデルは別の枠で動くので、同じモデルを待ち続けるより通ることが多い。
- */
-export const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
-/**
- * 一時的なエラーでの再試行の待ち時間（ミリ秒）。要素数が再試行の回数。
- * 2026-10-29 の実行は 503 "high demand" を1回受けただけで2件とも要約を諦め、
- * 2026-10-28 の記事が作られなかった。数十秒待てば戻ることが多い。
- */
-export const GEMINI_RETRY_WAITS_MS = [5_000, 15_000, 30_000];
+// 既存の呼び出し側（テスト・ドキュメント）が import 元を変えずに済むよう、
+// 分割した各段階の公開APIをここからも出す
+export * from './lib/article-fetch.ts';
+export * from './lib/bookmark-feed.ts';
+export * from './lib/gemini.ts';
+export { AbortRun, yesterdayInJst };
+
 export const POSTS_DIR = '_posts';
 /**
  * 前日分に加えて、記事が無ければ作り直す過去の日数。
@@ -73,554 +66,10 @@ export const POSTS_DIR = '_posts';
  */
 export const CATCH_UP_DAYS = 3;
 
-// 記事本文の取得まわり
-export const HTTP_TIMEOUT_MS = 15_000;
-/** 記事取得のリトライ（429/5xx のみ。404 は待っても変わらないので即諦める） */
-export const ARTICLE_RETRY_COUNT = 1;
-// RSS取得のリトライ（はてな側が不調でもその日の記事を落とさないため）
-export const RSS_RETRY_COUNT = 3;
-export const RSS_RETRY_WAIT_MS = 2_000;
-export const ARTICLE_TEXT_LIMIT = 3000;
-// 本文として採用する最低文字数。これを下回るときは取得失敗とみなして
-// 次の経路を試す（ログイン誘導やCookie同意だけのページ対策）
-export const MIN_ARTICLE_TEXT_CHARS = 200;
-
-// r.jina.ai 経由の取得
-// JavaScriptでレンダリングされるサイトは HTML を直接取っても本文が無いため、
-// レンダリング済みのテキストを返してくれる r.jina.ai を使う。
-export const JINA_READER_PREFIX = 'https://r.jina.ai/';
-export const JINA_TIMEOUT_MS = 30_000;
-
-// 要約の分量。ここを変えると記事全体のボリュームが変わる
-export const SUMMARY_MAX_CHARS = 120;
-export const POINT_MAX_CHARS = 45;
-export const MAX_POINTS = 3;
-
 /** Gemini のレート制限対策（記事ごとの待機） */
 export const API_INTERVAL_MS = 2_000;
 
-export const SUMMARY_FALLBACK = '要約を生成できませんでした。詳しくは元記事をご覧ください。';
-
-export { AbortRun };
-
-/** ブックマーク1件（RSSエントリから必要な情報だけ取り出したもの） */
-export interface Bookmark {
-  title: string;
-  url: string;
-}
-
-/** 1件分の短い要約。summary は1行、points は箇条書き（最大 MAX_POINTS 件） */
-export interface Digest {
-  summary: string;
-  points: string[];
-}
-
 export type SummarizedBookmark = [Bookmark, Digest];
-
-export const digest = (summary: string, points: string[] = []): Digest => ({ summary, points });
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-// --------------------------------------------------------------------------
-// 日付
-// --------------------------------------------------------------------------
-
-export { yesterdayInJst };
-
-/**
- * エントリが持つ日付の候補をすべて集める。
- *
- * はてなのRSSは dc:date / エントリID（/user/20250620#bookmark-xxx）/ published が
- * それぞれ食い違うことがあるため、どれか1つでも対象日と一致すれば採用する。
- */
-export function entryDatesJst(entry: FeedEntry): CivilDate[] {
-  const candidates: CivilDate[] = [];
-
-  if (entry.dcDate) {
-    const parsed = parseInstant(entry.dcDate);
-    if (parsed) candidates.push(jstDateOf(parsed));
-    else logger.info(`Unparsable dc:date: ${entry.dcDate}`);
-  }
-
-  if (entry.id) {
-    const match = /\/(\d{8})#/.exec(entry.id);
-    const parsed = match?.[1] ? parseCompactCivilDate(match[1]) : undefined;
-    if (parsed) candidates.push(parsed);
-  }
-
-  if (entry.published) {
-    const parsed = parseInstant(entry.published);
-    if (parsed) candidates.push(jstDateOf(parsed));
-    else logger.info(`Unparsable published: ${entry.published}`);
-  }
-
-  return candidates;
-}
-
-// --------------------------------------------------------------------------
-// RSS
-// --------------------------------------------------------------------------
-
-export interface FetchEntriesOptions {
-  /** テストから待ち時間を潰すために差し替える */
-  wait?: (ms: number) => Promise<void>;
-}
-
-/**
- * RSSフィードのエントリを取得する（失敗時は空リスト）。
- *
- * 取得先が応答しないとジョブがそのままハングするため、必ずタイムアウトを付け、
- * 一時的な失敗ではその日の記事を落とさないようリトライする。
- */
-export async function fetchEntries(
-  rssUrl: string = RSS_URL,
-  options: FetchEntriesOptions = {}
-): Promise<FeedEntry[]> {
-  const wait = options.wait ?? sleep;
-
-  for (let attempt = 1; attempt <= RSS_RETRY_COUNT; attempt += 1) {
-    try {
-      logger.info(`Fetching RSS from ${rssUrl} (attempt ${attempt}/${RSS_RETRY_COUNT})`);
-      const { bytes, contentType } = await fetchBytes(rssUrl, { timeoutMs: HTTP_TIMEOUT_MS });
-      const entries = parseFeed(decodeBody(bytes, contentType));
-      if (entries.length === 0) logger.warn('Feed parsing produced no entries, but continuing...');
-      return entries;
-    } catch (error) {
-      logger.error(`Error fetching RSS: ${describeError(error)}`);
-      if (attempt < RSS_RETRY_COUNT) await wait(RSS_RETRY_WAIT_MS * attempt);
-    }
-  }
-
-  return [];
-}
-
-/** 対象日のエントリを Bookmark に変換する（同一URLは先勝ちで重複排除） */
-export function selectBookmarks(entries: FeedEntry[], target: CivilDate): Bookmark[] {
-  const bookmarks: Bookmark[] = [];
-  const seen = new Set<string>();
-
-  for (const entry of entries) {
-    const title = entry.title ?? '';
-    const url = entry.link ?? '';
-    if (!url) {
-      logger.warn(`Skipping entry without link: ${title || 'Unknown'}`);
-      continue;
-    }
-
-    const dates = entryDatesJst(entry);
-    if (dates.length === 0) {
-      logger.warn(`No date found for entry: ${title || 'Unknown'}`);
-      continue;
-    }
-    if (!dates.some((date) => isSameDate(date, target))) continue;
-    if (seen.has(url)) {
-      logger.info(`Skipping duplicated bookmark: ${url}`);
-      continue;
-    }
-
-    seen.add(url);
-    bookmarks.push({ title, url });
-    logger.info(`Found entry for ${formatCivilDate(target)}: ${title}`);
-  }
-
-  logger.info(`Selected ${bookmarks.length} entries for ${formatCivilDate(target)}`);
-  return bookmarks;
-}
-
-// --------------------------------------------------------------------------
-// 記事本文
-// --------------------------------------------------------------------------
-
-/** 記事のHTMLを直接取得して本文を抽出する。取得できなければ undefined */
-export async function fetchArticleDirect(url: string): Promise<ArticleContent | undefined> {
-  try {
-    const { bytes, contentType } = await fetchBytes(url, {
-      timeoutMs: HTTP_TIMEOUT_MS,
-      retries: ARTICLE_RETRY_COUNT,
-    });
-    // PDF や画像を cheerio に渡してもゴミしか出ない
-    if (!isTextLike(contentType)) {
-      logger.warn(`Not a text document (${contentType}): ${url}`);
-      return undefined;
-    }
-    const text = extractArticleText(decodeBody(bytes, contentType), ARTICLE_TEXT_LIMIT);
-    if (!text) {
-      logger.warn(`No content extracted from ${url}`);
-      return undefined;
-    }
-    return { text, source: 'direct' };
-  } catch (error) {
-    // 1記事の失敗で全体を止めない
-    logger.error(`Error extracting content from ${url}: ${describeError(error)}`);
-    return undefined;
-  }
-}
-
-/**
- * r.jina.ai 経由でレンダリング済みのテキストを取得する。取得できなければ undefined。
- *
- * JINA_API_KEY があれば付与する（レート制限が緩くなる）。無くても動く。
- */
-export async function fetchArticleViaJina(url: string): Promise<ArticleContent | undefined> {
-  const headers: Record<string, string> = {
-    'User-Agent': USER_AGENT,
-    // Markdownのリンクや画像記法は要約に不要なので、プレーンテキストで受け取る
-    'X-Return-Format': 'text',
-  };
-  const apiKey = process.env.JINA_API_KEY;
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-
-  try {
-    // 対象URLは r.jina.ai のパスとして繋ぐ。`#` はそのまま渡すとフラグメントとして
-    // 切り落とされ、別のページを取りに行ってしまうのでエスケープする
-    const body = await fetchText(JINA_READER_PREFIX + url.replace(/#/g, '%23'), {
-      headers,
-      timeoutMs: JINA_TIMEOUT_MS,
-      retries: ARTICLE_RETRY_COUNT,
-    });
-    const text = body.replace(/\s+/g, ' ').trim();
-    if (!text) {
-      logger.warn(`No content extracted via r.jina.ai from ${url}`);
-      return undefined;
-    }
-    return { text: text.slice(0, ARTICLE_TEXT_LIMIT), source: 'r.jina.ai' };
-  } catch (error) {
-    logger.error(`Error extracting content via r.jina.ai from ${url}: ${describeError(error)}`);
-    return undefined;
-  }
-}
-
-/**
- * Twitter/X のポストを専用の経路で取得する。
- *
- * はてなのRSSはポストのタイトルをURLのまま返すことが多いので、
- * 見出し用のタイトルも一緒に返す。
- */
-export async function fetchArticleFromTwitter(url: string): Promise<ArticleContent | undefined> {
-  const ref = parseTweetRef(url);
-  if (!ref) return undefined;
-
-  const tweet = await fetchTweet(ref);
-  if (!tweet) return undefined;
-
-  return { text: tweetText(tweet), title: tweetTitle(tweet), source: 'twitter' };
-}
-
-/** 本文の取得経路。上から順に試す */
-export interface ArticleFetchers {
-  twitter: (url: string) => Promise<ArticleContent | undefined>;
-  direct: (url: string) => Promise<ArticleContent | undefined>;
-  jina: (url: string) => Promise<ArticleContent | undefined>;
-}
-
-export const defaultFetchers: ArticleFetchers = {
-  twitter: fetchArticleFromTwitter,
-  direct: fetchArticleDirect,
-  jina: fetchArticleViaJina,
-};
-
-export interface FetchStep {
-  fetcher: keyof ArticleFetchers;
-  /** これ以上の長さが取れたらその場で採用する */
-  minChars: number;
-}
-
-/**
- * URLごとの取得手順を決める。空配列なら「取得しても意味が無いURL」。
- *
- * ホストごとの事情はここに集約する。取得経路を増やすときは
- * ArticleFetchers に足してこの表に並べれば済むようにしてある。
- */
-export function fetchPlan(url: string): FetchStep[] {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return [];
-  }
-
-  if (isTwitterUrl(parsed)) {
-    // プロフィールやトレンドのURLは要約する本文が存在しない。
-    // 取りに行っても「JavaScriptを有効にしてください」しか返ってこないので、
-    // 記事に載せる価値のある結果は得られない
-    if (!parseTweetRef(url)) return [];
-    // ポストは140字程度のこともあるため、長さでは足切りしない
-    return [
-      { fetcher: 'twitter', minChars: 1 },
-      { fetcher: 'jina', minChars: MIN_ARTICLE_TEXT_CHARS },
-      { fetcher: 'direct', minChars: MIN_ARTICLE_TEXT_CHARS },
-    ];
-  }
-
-  return [
-    { fetcher: 'direct', minChars: MIN_ARTICLE_TEXT_CHARS },
-    { fetcher: 'jina', minChars: MIN_ARTICLE_TEXT_CHARS },
-  ];
-}
-
-/** 本文取得の結果。失敗した理由は run() がまとめて報告する */
-export type ArticleOutcome =
-  | { ok: true; content: ArticleContent }
-  | { ok: false; reason: string };
-
-/**
- * 記事の本文を取得する。
- *
- * 取得できた「だけ」では採用しない。ログイン誘導・JavaScript必須の案内・
- * r.jina.ai のエラー通知はどれも 200 で返ってくるうえ、そのまま要約すると
- * 記事の内容とは無関係な要約が出来上がるため、定型文を弾いてから次の経路に進む。
- */
-export async function fetchArticle(
-  url: string,
-  fetchers: ArticleFetchers = defaultFetchers
-): Promise<ArticleOutcome> {
-  const plan = fetchPlan(url);
-  if (plan.length === 0) return { ok: false, reason: '本文のあるURLではない' };
-
-  const reasons: string[] = [];
-  // どの経路も規定の長さに届かなかったときに使う、いちばんマシな結果
-  let fallback: ArticleContent | undefined;
-
-  for (const step of plan) {
-    const content = await fetchers[step.fetcher](url);
-    if (!content?.text) {
-      reasons.push(`${step.fetcher}: 本文が取れない`);
-      continue;
-    }
-
-    const boilerplate = boilerplateReason(content.text);
-    if (boilerplate) {
-      logger.warn(`Rejected ${step.fetcher} result for ${url}: ${boilerplate}`);
-      reasons.push(`${step.fetcher}: ${boilerplate}`);
-      continue;
-    }
-
-    if (content.text.length >= step.minChars) return { ok: true, content };
-
-    reasons.push(`${step.fetcher}: 本文が短い(${content.text.length}文字)`);
-    if (!fallback || content.text.length > fallback.text.length) fallback = content;
-  }
-
-  // 短くても定型文ではない本文が残っていれば、それを使う
-  if (fallback) return { ok: true, content: fallback };
-  return { ok: false, reason: reasons.join(' / ') };
-}
-
-// --------------------------------------------------------------------------
-// 要約
-// --------------------------------------------------------------------------
-
-export const PROMPT_TEMPLATE = `あなたは技術ブログの朝刊コーナーの編集者です。
-読者が出勤前に数十秒で全体を把握できるよう、次の記事を短くまとめてください。
-
-制約:
-- summary: 記事の要点を1文で。{summary_max}文字以内。体言止めや「〜する内容」のような要約調で簡潔に。
-- points: 補足したい具体的な情報を最大{max_points}個。各{point_max}文字以内の短い句。無ければ空配列。
-- 前置き・感想・元記事へのリンク案内は書かない。
-- 専門用語は必要な範囲で残しつつ、平易な日本語にする。
-
-次のJSONのみを出力してください:
-{"summary": "...", "points": ["...", "..."]}
-
-タイトル: {title}
-URL: {url}
-
-記事内容:
-{content}
-`;
-
-export function buildPrompt(bookmark: Bookmark, articleText: string): string {
-  const values: Record<string, string> = {
-    summary_max: String(SUMMARY_MAX_CHARS),
-    point_max: String(POINT_MAX_CHARS),
-    max_points: String(MAX_POINTS),
-    // パーセントエンコードのままのタイトルは Gemini にも読めないので戻す
-    title: displayTitle(bookmark.title),
-    url: bookmark.url,
-    content: articleText,
-  };
-  // 出力例の JSON にも `{...}` が出てくるので、既知のキーだけを置き換える
-  return PROMPT_TEMPLATE.replace(/\{(summary_max|point_max|max_points|title|url|content)\}/g,
-    (_, key: string) => values[key] ?? '');
-}
-
-/** 箇条書き記号や余分な空白・強調記法を落として1行にする */
-function normalize(text: unknown): string {
-  let value = String(text ?? '').replace(/\s+/g, ' ').trim();
-  value = value.replace(/^[-*・•\d]+[.)]?\s*/, '');
-  return value.replace(/\*\*/g, '').trim();
-}
-
-/** limit 文字以内に収める。文の途中で切れないよう句点を優先する */
-function shorten(text: unknown, limit: number): string {
-  const value = normalize(text);
-  if (value.length <= limit) return value;
-
-  const head = value.slice(0, limit);
-  const sentenceEnd = Math.max(head.lastIndexOf('。'), head.lastIndexOf('！'), head.lastIndexOf('？'));
-  if (sentenceEnd >= Math.floor(limit / 2)) return head.slice(0, sentenceEnd + 1);
-  // 末尾の「…」も1文字分なので、その分だけ短く切る
-  return `${value.slice(0, limit - 1).replace(/\s+$/, '')}…`;
-}
-
-/** モデル出力からJSONオブジェクトを取り出す（```json フェンス付きにも対応） */
-function extractJson(raw: string): Record<string, unknown> | undefined {
-  let text = raw.trim();
-  const fenced = /```(?:json)?\s*([\s\S]+?)```/.exec(text);
-  if (fenced?.[1]) {
-    text = fenced[1].trim();
-  } else {
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start !== -1 && end > start) text = text.slice(start, end + 1);
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** モデル出力を Digest に変換する。JSONで返らなかった場合は本文の先頭を使う */
-export function parseDigest(raw: string): Digest {
-  const payload = extractJson(raw) ?? {};
-
-  let summary = shorten(payload.summary ?? '', SUMMARY_MAX_CHARS);
-  if (!summary) {
-    // JSONとして壊れていても、プレーンテキストの1行目が使えることが多い
-    const firstLine = raw.split('\n').find((line) => normalize(line)) ?? '';
-    summary = shorten(firstLine, SUMMARY_MAX_CHARS);
-  }
-
-  const rawPoints = payload.points ?? [];
-  const candidates = Array.isArray(rawPoints) ? rawPoints : [rawPoints];
-
-  const points: string[] = [];
-  for (const candidate of candidates) {
-    const shortened = shorten(candidate, POINT_MAX_CHARS);
-    if (shortened && shortened !== summary) points.push(shortened);
-    if (points.length >= MAX_POINTS) break;
-  }
-
-  return digest(summary || SUMMARY_FALLBACK, points);
-}
-
-/**
- * 要約リクエストの生成設定。
- *
- * SDKの型を通して組み立てるので、設定名がSDKのバージョンに存在しなくなれば
- * 型チェック（npm run check）で気づける。
- */
-export function generationConfig(): GenerateContentConfig {
-  return {
-    responseMimeType: 'application/json',
-    temperature: 0.2,
-  };
-}
-
-export interface Summarizer {
-  summarize(bookmark: Bookmark, articleText: string): Promise<Digest>;
-}
-
-/** テストから差し替えられるよう、SDKのうち実際に使う部分だけを型にしている */
-export interface GenerativeClient {
-  models: {
-    generateContent(params: {
-      model: string;
-      contents: string;
-      config: GenerateContentConfig;
-    }): Promise<{ text?: string | undefined }>;
-  };
-}
-
-/**
- * 待てば通る見込みのある Gemini のエラーか。
- *
- * SDK の ApiError は `status` に HTTP ステータスを持つが、メッセージに
- * `{"error":{"code":503,...,"status":"UNAVAILABLE"}}` が入るだけのこともあるので両方を見る。
- * 400（プロンプト不正）や 403（APIキー）は何度試しても同じなので再試行しない。
- */
-export function isTransientGeminiError(error: unknown): boolean {
-  const status = (error as { status?: unknown } | null)?.status;
-  if (typeof status === 'number') return status === 408 || status === 429 || status >= 500;
-
-  const message = error instanceof Error ? error.message : String(error);
-  const code = /"code"\s*:\s*(\d{3})/.exec(message)?.[1];
-  if (code) return code === '408' || code === '429' || Number(code) >= 500;
-  return /UNAVAILABLE|RESOURCE_EXHAUSTED|DEADLINE_EXCEEDED|INTERNAL|overloaded|high demand|fetch failed|ECONNRESET|ETIMEDOUT|timed? ?out/i.test(
-    message
-  );
-}
-
-export interface GeminiSummarizerOptions {
-  model?: string;
-  /** 一時的なエラーが続いたときに切り替えるモデル。null なら切り替えない */
-  fallbackModel?: string | null;
-  client?: GenerativeClient;
-  /** 再試行の待ち時間。要素数が再試行の回数 */
-  retryWaitsMs?: number[];
-  /** テストから待ち時間を潰すために差し替える */
-  wait?: (ms: number) => Promise<void>;
-}
-
-/** Gemini で1件分の短い要約を作る */
-export class GeminiSummarizer implements Summarizer {
-  private readonly client: GenerativeClient;
-  private readonly models: string[];
-  private readonly retryWaitsMs: number[];
-  private readonly wait: (ms: number) => Promise<void>;
-
-  constructor(apiKey: string, options: GeminiSummarizerOptions = {}) {
-    this.client = options.client ?? new GoogleGenAI({ apiKey });
-    const model = options.model ?? GEMINI_MODEL;
-    const fallback =
-      options.fallbackModel === undefined ? GEMINI_FALLBACK_MODEL : options.fallbackModel;
-    this.models = fallback && fallback !== model ? [model, fallback] : [model];
-    this.retryWaitsMs = options.retryWaitsMs ?? GEMINI_RETRY_WAITS_MS;
-    this.wait = options.wait ?? sleep;
-  }
-
-  async summarize(bookmark: Bookmark, articleText: string): Promise<Digest> {
-    const contents = buildPrompt(bookmark, articleText);
-
-    for (const [modelIndex, model] of this.models.entries()) {
-      // 本命のモデルは待って再試行し、代替モデルは1回だけ試す
-      const waits = modelIndex === 0 ? this.retryWaitsMs : [];
-
-      for (let attempt = 0; ; attempt += 1) {
-        try {
-          const response = await this.client.models.generateContent({
-            model,
-            contents,
-            config: generationConfig(),
-          });
-          return parseDigest(response.text ?? '');
-        } catch (error) {
-          const transient = isTransientGeminiError(error);
-          logger.error(
-            `Error generating summary for ${bookmark.url} (${model}, attempt ${attempt + 1}): ${describeError(error)}`
-          );
-          // 1記事の失敗で全体を止めない。一時的でないエラーは別モデルでも同じ
-          if (!transient) return digest(SUMMARY_FALLBACK);
-
-          const waitMs = waits[attempt];
-          if (waitMs === undefined) break;
-          logger.info(`Retrying in ${waitMs / 1000}s...`);
-          await this.wait(waitMs);
-        }
-      }
-
-      const next = this.models[modelIndex + 1];
-      if (next) logger.warn(`Falling back to ${next} for ${bookmark.url}`);
-    }
-
-    return digest(SUMMARY_FALLBACK);
-  }
-}
 
 // --------------------------------------------------------------------------
 // 記事生成
@@ -656,8 +105,7 @@ export function renderPost(digests: SummarizedBookmark[], target: CivilDate): st
       entry.summary,
     ];
     if (entry.points.length > 0) {
-      block.push('');
-      block.push(...entry.points.map((point) => `- ${point}`));
+      block.push('', ...entry.points.map((point) => `- ${point}`));
     }
     return block.join('\n');
   });
@@ -683,18 +131,18 @@ export async function writePost(
   }
 
   const filePath = postPath(target, postsDir);
-  if (await fileExists(filePath)) {
-    // run() でも先に検査しているので、ここに来るのは postsDir を差し替えた
-    // 呼び出しだけ。上書きすると既存記事を失うため必ず残す。
-    logger.warn(`Post already exists, keeping the existing file: ${filePath}`);
+  let created: boolean;
+  try {
+    created = await writeFileIfAbsent(filePath, renderPost(digests, target));
+  } catch (error) {
+    logger.error(`Error creating daily post: ${describeError(error)}`);
     return false;
   }
 
-  try {
-    await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, renderPost(digests, target), 'utf-8');
-  } catch (error) {
-    logger.error(`Error creating daily post: ${describeError(error)}`);
+  if (!created) {
+    // run() でも先に検査しているので、ここに来るのは postsDir を差し替えた
+    // 呼び出しだけ。上書きすると既存記事を失うため必ず残す。
+    logger.warn(`Post already exists, keeping the existing file: ${filePath}`);
     return false;
   }
 
@@ -703,7 +151,7 @@ export async function writePost(
 }
 
 // --------------------------------------------------------------------------
-// エントリポイント
+// 本文取得 + 要約
 // --------------------------------------------------------------------------
 
 export interface SummarizeBookmarksOptions {
@@ -776,27 +224,6 @@ export function withResolvedTitle(bookmark: Bookmark, content: ArticleContent): 
   return { ...bookmark, title: content.title };
 }
 
-/** run() が呼び出す処理。テストから差し替えられるようにまとめてある */
-export interface RunDeps {
-  fetchEntries: (rssUrl?: string) => Promise<FeedEntry[]>;
-  selectBookmarks: (entries: FeedEntry[], target: CivilDate) => Bookmark[];
-  summarizeBookmarks: (bookmarks: Bookmark[], summarizer: Summarizer) => Promise<SummarizeResult>;
-  writePost: (
-    digests: SummarizedBookmark[],
-    target: CivilDate,
-    postsDir: string
-  ) => Promise<boolean>;
-  createSummarizer: (apiKey: string) => Summarizer;
-}
-
-const defaultDeps: RunDeps = {
-  fetchEntries: (rssUrl) => fetchEntries(rssUrl),
-  selectBookmarks,
-  summarizeBookmarks: (bookmarks, summarizer) => summarizeBookmarks(bookmarks, summarizer),
-  writePost,
-  createSummarizer: (apiKey) => new GeminiSummarizer(apiKey),
-};
-
 /** 記事に載らなかったブックマークをログとジョブサマリに出す */
 async function reportSkipped(skipped: SkippedBookmark[], total: number): Promise<void> {
   logger.warn(`${total}件中${skipped.length}件を記事に載せられませんでした:`);
@@ -820,6 +247,31 @@ async function reportSkipped(skipped: SkippedBookmark[], total: number): Promise
     ].join('\n')
   );
 }
+
+// --------------------------------------------------------------------------
+// エントリポイント
+// --------------------------------------------------------------------------
+
+/** run() が呼び出す処理。テストから差し替えられるようにまとめてある */
+export interface RunDeps {
+  fetchEntries: (rssUrl?: string) => Promise<FeedEntry[]>;
+  selectBookmarks: (entries: FeedEntry[], target: CivilDate) => Bookmark[];
+  summarizeBookmarks: (bookmarks: Bookmark[], summarizer: Summarizer) => Promise<SummarizeResult>;
+  writePost: (
+    digests: SummarizedBookmark[],
+    target: CivilDate,
+    postsDir: string
+  ) => Promise<boolean>;
+  createSummarizer: (apiKey: string) => Summarizer;
+}
+
+const defaultDeps: RunDeps = {
+  fetchEntries: (rssUrl) => fetchEntries(rssUrl),
+  selectBookmarks,
+  summarizeBookmarks: (bookmarks, summarizer) => summarizeBookmarks(bookmarks, summarizer),
+  writePost,
+  createSummarizer: (apiKey) => new GeminiSummarizer(apiKey),
+};
 
 export interface RunOptions {
   targetDate?: CivilDate;
@@ -905,13 +357,6 @@ export async function run(options: RunOptions = {}): Promise<number> {
   return (await deps.writePost(digests, target, postsDir)) ? 1 : 0;
 }
 
-/** 対象日を指定したRSSのURL */
-export function rssUrlForDate(target: CivilDate, rssUrl: string = RSS_URL): string {
-  const url = new URL(rssUrl);
-  url.searchParams.set('date', formatCivilDate(target).replace(/-/g, ''));
-  return url.toString();
-}
-
 /**
  * 前日より前で、記事が無い日を作り直す。
  *
@@ -938,7 +383,7 @@ export async function catchUp(
       if (count > 0) logger.warn(`Recreated missing post for ${formatCivilDate(target)}`);
       created += count;
     } catch (error) {
-      const message = error instanceof AbortRun ? error.message : describeError(error);
+      const message = describeError(error);
       logger.warn(`Could not catch up ${formatCivilDate(target)}: ${message}`);
       failures.push(`- ${formatCivilDate(target)}: ${message.split('\n')[0]}`);
     }
@@ -950,21 +395,6 @@ export async function catchUp(
   return created;
 }
 
-/** 同じRSSを何度も取りに行かないよう、URLごとに結果を覚えておく */
-export function memoizeFetchEntries(
-  fetcher: (rssUrl?: string) => Promise<FeedEntry[]>
-): (rssUrl?: string) => Promise<FeedEntry[]> {
-  const cache = new Map<string, Promise<FeedEntry[]>>();
-  return (rssUrl = RSS_URL) => {
-    let entries = cache.get(rssUrl);
-    if (!entries) {
-      entries = fetcher(rssUrl);
-      cache.set(rssUrl, entries);
-    }
-    return entries;
-  };
-}
-
 export interface CliArgs {
   date?: CivilDate;
   dryRun: boolean;
@@ -972,23 +402,23 @@ export interface CliArgs {
 
 export function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = { dryRun: false };
+  const abort = (message: string) => new AbortRun(message);
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index]!;
-    if (arg === '--dry-run') {
-      args.dryRun = true;
-      continue;
-    }
-    const [flag, inlineValue] = arg.startsWith('--date=') ? arg.split('=', 2) : [arg, undefined];
-    if (flag === '--date') {
-      const value = inlineValue ?? argv[++index];
-      const parsed = value ? parseCivilDate(value) : undefined;
-      if (!parsed) throw new AbortRun(`--date は YYYY-MM-DD で指定してください: ${value ?? ''}`);
-      args.date = parsed;
-      continue;
-    }
-    throw new AbortRun(`不明な引数: ${arg}`);
-  }
+  parseFlags(
+    argv,
+    {
+      '--dry-run': () => {
+        args.dryRun = true;
+      },
+      '--date': (value) => {
+        const raw = value();
+        const parsed = parseCivilDate(raw);
+        if (!parsed) throw abort(`--date は YYYY-MM-DD で指定してください: ${raw}`);
+        args.date = parsed;
+      },
+    },
+    abort
+  );
 
   return args;
 }
@@ -1015,9 +445,4 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   return 0;
 }
 
-// スクリプトとして実行されたときだけ動かす（テストからの import では動かさない）
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void main().then((code) => {
-    process.exitCode = code;
-  });
-}
+runIfMain(import.meta.url, main);

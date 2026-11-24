@@ -1,6 +1,6 @@
 /** ファイルまわりの小さなヘルパー */
 
-import { access, readdir, stat } from 'node:fs/promises';
+import { access, mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 export async function fileExists(filePath: string): Promise<boolean> {
@@ -38,4 +38,21 @@ export async function listFilesRecursively(dirPath: string): Promise<string[]> {
 
   await walk(dirPath);
   return found;
+}
+
+/**
+ * ファイルがまだ無いときだけ書き出す。書いたら true、既にあれば false。
+ *
+ * 記事は上書きすると既存の内容を失うので、存在確認と書き込みを分けずに
+ * `wx`（既にあれば失敗）で1回で済ませる。それ以外の失敗は例外のまま返す。
+ */
+export async function writeFileIfAbsent(filePath: string, content: string): Promise<boolean> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  try {
+    await writeFile(filePath, content, { encoding: 'utf-8', flag: 'wx' });
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw error;
+  }
 }

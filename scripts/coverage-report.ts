@@ -14,8 +14,8 @@
 
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 
+import { parseFlags, parseNumber, runIfMain } from './lib/cli.ts';
 import { describeError } from './lib/logger.ts';
 
 /** PR コメントを毎回作り直さず上書きするための目印 */
@@ -172,40 +172,23 @@ interface CliArgs {
 export function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = { summary: 'coverage/coverage-summary.json', root: process.cwd() };
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const raw = argv[index]!;
-    const [flag, inline] = raw.includes('=')
-      ? [raw.slice(0, raw.indexOf('=')), raw.slice(raw.indexOf('=') + 1)]
-      : [raw, undefined];
-    const value = () => {
-      const next = inline ?? argv[++index];
-      if (next === undefined) throw new Error(`${flag} には値が必要です`);
-      return next;
-    };
-
-    switch (flag) {
-      case '--summary':
-        args.summary = value();
-        break;
-      case '--out':
-        args.out = value();
-        break;
-      case '--min-lines': {
-        const parsed = Number(value());
-        if (!Number.isFinite(parsed)) throw new Error('--min-lines には数値が必要です');
-        args.minLines = parsed;
-        break;
-      }
-      case '--run-url':
-        args.runUrl = value();
-        break;
-      case '--root':
-        args.root = value();
-        break;
-      default:
-        throw new Error(`不明な引数: ${flag}`);
-    }
-  }
+  parseFlags(argv, {
+    '--summary': (value) => {
+      args.summary = value();
+    },
+    '--out': (value) => {
+      args.out = value();
+    },
+    '--min-lines': (value) => {
+      args.minLines = parseNumber('--min-lines', value());
+    },
+    '--run-url': (value) => {
+      args.runUrl = value();
+    },
+    '--root': (value) => {
+      args.root = value();
+    },
+  });
 
   return args;
 }
@@ -241,9 +224,4 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   return 0;
 }
 
-// スクリプトとして実行されたときだけ動かす（テストからの import では動かさない）
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void main().then((code) => {
-    process.exitCode = code;
-  });
-}
+runIfMain(import.meta.url, main);

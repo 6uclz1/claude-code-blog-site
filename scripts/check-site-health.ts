@@ -16,25 +16,15 @@
  *     npm run health-check -- --feed https://example.com/feed.xml --max-age-hours 36
  */
 
-import { pathToFileURL } from 'node:url';
-
-import { XMLParser } from 'fast-xml-parser';
-
-import {
-  formatCivilDate,
-  jstDateOf,
-  parseCompactCivilDate,
-  parseInstant,
-  yesterdayInJst,
-  type CivilDate,
-} from './lib/date.ts';
+import { parseAtomFeed } from './lib/atom.ts';
+import { parseFlags, parseNumber, runIfMain } from './lib/cli.ts';
+import { formatCivilDate, jstDateOf, yesterdayInJst } from './lib/date.ts';
 import { fetchText } from './lib/http.ts';
 import { describeError } from './lib/logger.ts';
-import { parseFeed as parseBookmarkFeed, type FeedEntry as BookmarkFeedEntry } from './lib/rss.ts';
-import { asArray, attrOf, isNode, textOf } from './lib/xml-node.ts';
+import { entryDatesJst, HATENA_RSS_URL, parseFeed as parseBookmarkFeed } from './lib/rss.ts';
+import { createXmlParser, isNode } from './lib/xml-node.ts';
 
 const DEFAULT_FEED_URL = 'https://6uclz1.github.io/claude-code-blog-site/feed.xml';
-const DEFAULT_SOURCE_FEED_URL = 'https://b.hatena.ne.jp/Buchi_6uclz1/rss';
 
 /**
  * 最新記事の許容される古さ（時間）。
@@ -48,13 +38,9 @@ const DEFAULT_MAX_AGE_HOURS = 36;
 
 const FETCH_TIMEOUT_MS = 30_000;
 
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '@_',
-  parseTagValue: false,
-  parseAttributeValue: false,
-  trimValues: true,
-});
+const MS_PER_HOUR = 3_600_000;
+
+const parser = createXmlParser();
 
 export interface FeedEntry {
   title: string;
@@ -64,19 +50,14 @@ export interface FeedEntry {
 
 /** Atom フィードから記事を取り出す。読めない形なら例外 */
 export function parseFeed(xml: string): FeedEntry[] {
-  const parsed: unknown = parser.parse(xml);
-  if (!isNode(parsed)) throw new Error('フィードを XML として解釈できません');
+  const entries = parseAtomFeed(xml);
+  if (!entries) throw new Error('Atom の <feed> がありません');
 
-  const feed = parsed['feed'];
-  if (!isNode(feed)) throw new Error('Atom の <feed> がありません');
-
-  return asArray(feed['entry'])
-    .filter(isNode)
-    .map((entry) => ({
-      title: textOf(entry['title']),
-      link: attrOf(asArray(entry['link'])[0], 'href'),
-      updated: textOf(entry['updated']) || textOf(entry['published']) || undefined,
-    }));
+  return entries.map(({ title, link, updated, published }) => ({
+    title,
+    link,
+    updated: updated || published || undefined,
+  }));
 }
 
 export interface CheckOptions {
@@ -89,13 +70,18 @@ export interface CheckOptions {
 
 /** フィードの中身を検査して、見つかった異常を日本語で返す */
 export function checkEntries(entries: FeedEntry[], options: CheckOptions): string[] {
-  const problems: string[] = [];
-  const now = options.now ?? new Date();
+  return [
+    ...structureProblems(entries, options.minEntries),
+    ...freshnessProblems(entries, options.maxAgeHours, options.now ?? new Date()),
+  ];
+}
 
-  if (entries.length < options.minEntries) {
-    problems.push(
-      `フィードの記事が ${entries.length} 件しかありません（${options.minEntries} 件以上を期待）`
-    );
+/** 件数・空タイトル・リンクの欠落と重複 */
+function structureProblems(entries: FeedEntry[], minEntries: number): string[] {
+  const problems: string[] = [];
+
+  if (entries.length < minEntries) {
+    problems.push(`フィードの記事が ${entries.length} 件しかありません（${minEntries} 件以上を期待）`);
   }
 
   if (entries.some((entry) => entry.title.trim() === '')) {
@@ -112,26 +98,35 @@ export function checkEntries(entries: FeedEntry[], options: CheckOptions): strin
     seen.add(entry.link);
   }
 
-  // 「更新が止まった」を捕まえるのがこの検査の主目的。
-  // 最新1件だけ見れば足りる（古い記事の日付は変わらない）
+  return problems;
+}
+
+/**
+ * 「更新が止まった」を捕まえるのがこの検査の主目的。
+ * 最新1件だけ見れば足りる（古い記事の日付は変わらない）
+ */
+function freshnessProblems(entries: FeedEntry[], maxAgeHours: number, now: Date): string[] {
   const newest = newestTimestamp(entries);
-  if (entries.length > 0 && newest === undefined) {
-    problems.push('フィードの記事に読める日付がありません');
-  } else if (newest !== undefined) {
-    const ageHours = (now.getTime() - newest.getTime()) / 3_600_000;
-    if (ageHours > options.maxAgeHours) {
-      problems.push(
-        `最新記事が ${Math.floor(ageHours)} 時間前で止まっています` +
-          `（${options.maxAgeHours} 時間以内を期待）。自動更新が動いていない可能性があります`
-      );
-    }
-    // 未来の日付は、生成時に実行時刻を使ってしまったときに出る典型的な壊れ方
-    if (ageHours < -24) {
-      problems.push(`最新記事の日付が未来になっています: ${newest.toISOString()}`);
-    }
+  if (newest === undefined) {
+    return entries.length > 0 ? ['フィードの記事に読める日付がありません'] : [];
   }
 
-  return problems;
+  const ageHours = hoursBetween(newest, now);
+  if (ageHours > maxAgeHours) {
+    return [
+      `最新記事が ${Math.floor(ageHours)} 時間前で止まっています` +
+        `（${maxAgeHours} 時間以内を期待）。自動更新が動いていない可能性があります`,
+    ];
+  }
+  // 未来の日付は、生成時に実行時刻を使ってしまったときに出る典型的な壊れ方
+  if (ageHours < -24) {
+    return [`最新記事の日付が未来になっています: ${newest.toISOString()}`];
+  }
+  return [];
+}
+
+function hoursBetween(from: Date, to: Date): number {
+  return (to.getTime() - from.getTime()) / MS_PER_HOUR;
 }
 
 function newestTimestamp(entries: FeedEntry[]): Date | undefined {
@@ -143,22 +138,6 @@ function newestTimestamp(entries: FeedEntry[]): Date | undefined {
     if (!newest || parsed > newest) newest = parsed;
   }
   return newest;
-}
-
-/** はてなのRSSで実際の記事生成に使われる日付候補を集める */
-function bookmarkDates(entry: BookmarkFeedEntry): CivilDate[] {
-  const dates: CivilDate[] = [];
-
-  for (const value of [entry.dcDate, entry.published]) {
-    const instant = value ? parseInstant(value) : undefined;
-    if (instant) dates.push(jstDateOf(instant));
-  }
-
-  const compactDate = entry.id ? /\/(\d{8})#/.exec(entry.id)?.[1] : undefined;
-  const idDate = compactDate ? parseCompactCivilDate(compactDate) : undefined;
-  if (idDate) dates.push(idDate);
-
-  return dates;
 }
 
 /**
@@ -190,7 +169,7 @@ export function hasUnpublishedBookmarks(
   const latestExpectedDate = formatCivilDate(yesterdayInJst(now));
 
   for (const bookmark of parseBookmarkFeed(xml)) {
-    const dates = bookmarkDates(bookmark);
+    const dates = entryDatesJst(bookmark);
     if (dates.length === 0) {
       throw new Error(`ブックマークの日付を読み取れません: ${bookmark.link || '(URLなし)'}`);
     }
@@ -237,35 +216,31 @@ export async function checkSite(
     return { ok: false, problems: [`フィードが壊れています: ${describeError(error)}`], entryCount: 0 };
   }
 
-  const problems = checkEntries(entries, options);
-  const newest = newestTimestamp(entries);
   const now = options.now ?? new Date();
-  const stale =
-    newest !== undefined &&
-    (now.getTime() - newest.getTime()) / 3_600_000 > options.maxAgeHours;
+  const problems = structureProblems(entries, options.minEntries);
 
-  if (stale && newest && options.sourceFeed) {
+  // 最新記事が古くても、その後に記事にすべきブックマークが無いなら正常な停止。
+  // 元RSSで確かめられたときだけ鮮度の警告を出さない
+  const newest = newestTimestamp(entries);
+  let sourceIdle = false;
+  let sourceProblem: string | undefined;
+  if (options.sourceFeed && newest && hoursBetween(newest, now) > options.maxAgeHours) {
     try {
-      const sourceXml = await fetchFeed(options.sourceFeed);
-      if (!hasUnpublishedBookmarks(sourceXml, newest, now)) {
-        const ageProblem = problems.findIndex((problem) =>
-          problem.includes('自動更新が動いていない可能性があります')
-        );
-        if (ageProblem !== -1) problems.splice(ageProblem, 1);
-
-        return {
-          ok: problems.length === 0,
-          problems,
-          entryCount: entries.length,
-          sourceIdle: true,
-        };
-      }
+      sourceIdle = !hasUnpublishedBookmarks(await fetchFeed(options.sourceFeed), newest, now);
     } catch (error) {
-      problems.push(`ブックマーク元を確認できません: ${describeError(error)}`);
+      sourceProblem = `ブックマーク元を確認できません: ${describeError(error)}`;
     }
   }
 
-  return { ok: problems.length === 0, problems, entryCount: entries.length };
+  if (!sourceIdle) problems.push(...freshnessProblems(entries, options.maxAgeHours, now));
+  if (sourceProblem) problems.push(sourceProblem);
+
+  return {
+    ok: problems.length === 0,
+    problems,
+    entryCount: entries.length,
+    ...(sourceIdle ? { sourceIdle: true } : {}),
+  };
 }
 
 interface CliArgs extends CheckOptions {
@@ -277,42 +252,23 @@ export function parseArgs(argv: string[]): CliArgs {
     feed: DEFAULT_FEED_URL,
     maxAgeHours: DEFAULT_MAX_AGE_HOURS,
     minEntries: 1,
-    sourceFeed: DEFAULT_SOURCE_FEED_URL,
+    sourceFeed: HATENA_RSS_URL,
   };
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const raw = argv[index]!;
-    const [flag, inline] = raw.includes('=')
-      ? [raw.slice(0, raw.indexOf('=')), raw.slice(raw.indexOf('=') + 1)]
-      : [raw, undefined];
-    const value = () => {
-      const next = inline ?? argv[++index];
-      if (next === undefined) throw new Error(`${flag} には値が必要です`);
-      return next;
-    };
-    const numeric = (flag: string) => {
-      const parsed = Number(value());
-      if (!Number.isFinite(parsed)) throw new Error(`${flag} には数値が必要です`);
-      return parsed;
-    };
-
-    switch (flag) {
-      case '--feed':
-        args.feed = value();
-        break;
-      case '--max-age-hours':
-        args.maxAgeHours = numeric(flag);
-        break;
-      case '--source-feed':
-        args.sourceFeed = value();
-        break;
-      case '--min-entries':
-        args.minEntries = numeric(flag);
-        break;
-      default:
-        throw new Error(`不明な引数: ${flag}`);
-    }
-  }
+  parseFlags(argv, {
+    '--feed': (value) => {
+      args.feed = value();
+    },
+    '--max-age-hours': (value) => {
+      args.maxAgeHours = parseNumber('--max-age-hours', value());
+    },
+    '--source-feed': (value) => {
+      args.sourceFeed = value();
+    },
+    '--min-entries': (value) => {
+      args.minEntries = parseNumber('--min-entries', value());
+    },
+  });
 
   return args;
 }
@@ -342,9 +298,4 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   return 0;
 }
 
-// スクリプトとして実行されたときだけ動かす（テストからの import では動かさない）
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void main().then((code) => {
-    process.exitCode = code;
-  });
-}
+runIfMain(import.meta.url, main);

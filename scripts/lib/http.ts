@@ -10,6 +10,7 @@
  */
 
 import { logger } from './logger.ts';
+import { sleep } from './sleep.ts';
 
 // 実在するブラウザに近いUAを名乗る。極端に古いUAはボット判定で弾かれやすい
 export const USER_AGENT =
@@ -56,8 +57,6 @@ export class HttpError extends Error {
     return this.status === 408 || this.status === 425 || this.status === 429 || this.status >= 500;
   }
 }
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** `Retry-After`（秒数 or 日時）をミリ秒にする */
 function retryAfterMs(response: Response): number | undefined {

@@ -5,6 +5,14 @@
  * テストしたいロジックはこちら側に置き、posts.ts からは再エクスポートする。
  */
 
+/** Jekyll の paginate 設定と同じく1ページあたり10記事 */
+export const PAGE_SIZE = 10;
+
+/** 一覧のページ数。記事が0件でもトップページは出すので最低1 */
+export function pageCount(postCount: number): number {
+  return Math.max(1, Math.ceil(postCount / PAGE_SIZE));
+}
+
 /**
  * permalink から Astro のルートパラメータを作る。
  * `/2026/07/26/hatena-bookmarks/` -> `2026/07/26/hatena-bookmarks`

@@ -5,6 +5,8 @@
  * `#text` に入る。この差をここで吸収する。
  */
 
+import { XMLParser, type X2jOptions } from 'fast-xml-parser';
+
 export type XmlNode = Record<string, unknown>;
 
 export function isNode(value: unknown): value is XmlNode {
@@ -33,4 +35,19 @@ export function attrOf(value: unknown, name: string): string {
   if (!isNode(value)) return '';
   const attribute = value[`@_${name}`];
   return typeof attribute === 'string' ? attribute.trim() : '';
+}
+
+/**
+ * このリポジトリで使う XMLParser。属性は `@_` 付きで読み、値は文字列のまま残す
+ * （<title>2026</title> のような値を数値にされると扱いづらい）。
+ */
+export function createXmlParser(options: X2jOptions = {}): XMLParser {
+  return new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: '@_',
+    parseTagValue: false,
+    parseAttributeValue: false,
+    trimValues: true,
+    ...options,
+  });
 }
