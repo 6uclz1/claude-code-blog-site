@@ -12,15 +12,15 @@
  *     npm run weekly-digest -- [--week-ending YYYY-MM-DD] [--dry-run]
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 // 見出しの読み取りはフィードや /sites/ と同じものを使う。日次記事の見出しは
 // 新旧2形式あり、二重に実装すると片方だけ直して静かにズレる
 import { extractBookmarks, hostOf, type BookmarkRef } from '../src/lib/bookmarks.ts';
 
 import { AbortRun } from './lib/abort.ts';
+import { parseFlags, runIfMain } from './lib/cli.ts';
 import {
   addDays,
   formatCivilDate,
@@ -33,7 +33,7 @@ import {
   type CivilDate,
 } from './lib/date.ts';
 import { buildFrontMatter, splitFrontMatter } from './lib/frontmatter.ts';
-import { fileExists } from './lib/fs.ts';
+import { fileExists, writeFileIfAbsent } from './lib/fs.ts';
 import { describeError, logger } from './lib/logger.ts';
 import { markdownLink } from './lib/markdown.ts';
 
@@ -180,16 +180,16 @@ export async function writePost(
   }
 
   const filePath = postPath(end, postsDir);
-  if (await fileExists(filePath)) {
-    logger.warn(`Weekly post already exists, keeping it: ${filePath}`);
+  let created: boolean;
+  try {
+    created = await writeFileIfAbsent(filePath, renderPost(digests, end));
+  } catch (error) {
+    logger.error(`Error creating weekly post: ${describeError(error)}`);
     return false;
   }
 
-  try {
-    await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, renderPost(digests, end), 'utf-8');
-  } catch (error) {
-    logger.error(`Error creating weekly post: ${describeError(error)}`);
+  if (!created) {
+    logger.warn(`Weekly post already exists, keeping it: ${filePath}`);
     return false;
   }
 
@@ -245,27 +245,23 @@ export interface CliArgs {
 
 export function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = { dryRun: false };
+  const abort = (message: string) => new AbortRun(message);
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index]!;
-    if (arg === '--dry-run') {
-      args.dryRun = true;
-      continue;
-    }
-    const [flag, inlineValue] = arg.startsWith('--week-ending=')
-      ? arg.split('=', 2)
-      : [arg, undefined];
-    if (flag === '--week-ending') {
-      const value = inlineValue ?? argv[++index];
-      const parsed = value ? parseCivilDate(value) : undefined;
-      if (!parsed) {
-        throw new AbortRun(`--week-ending は YYYY-MM-DD で指定してください: ${value ?? ''}`);
-      }
-      args.weekEnding = parsed;
-      continue;
-    }
-    throw new AbortRun(`不明な引数: ${arg}`);
-  }
+  parseFlags(
+    argv,
+    {
+      '--dry-run': () => {
+        args.dryRun = true;
+      },
+      '--week-ending': (value) => {
+        const raw = value();
+        const parsed = parseCivilDate(raw);
+        if (!parsed) throw abort(`--week-ending は YYYY-MM-DD で指定してください: ${raw}`);
+        args.weekEnding = parsed;
+      },
+    },
+    abort
+  );
 
   return args;
 }
@@ -284,9 +280,4 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   return 0;
 }
 
-// スクリプトとして実行されたときだけ動かす（テストからの import では動かさない）
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void main().then((code) => {
-    process.exitCode = code;
-  });
-}
+runIfMain(import.meta.url, main);

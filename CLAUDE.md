@@ -161,13 +161,24 @@ docker compose run --rm scripts npm test
   - `scripts/validate-build.ts`: pre-publish gate over the build log and feed.xml
   - `scripts/check-site-health.ts`: 公開中の feed.xml を外から検査する異常検知
   - `scripts/coverage-report.ts`: vitest のカバレッジを Markdown 化（PRコメント用）
-  - `scripts/lib/`: 共通部品。`date.ts`（JST固定オフセットの暦日）, `frontmatter.ts`
+  - `scripts/lib/`: 日次記事の各段階 — `bookmark-feed.ts`（RSS取得と対象日の選別）,
+    `article-fetch.ts`（本文の取得経路と定型文の除外）, `gemini.ts`（要約の生成と整形）。
+    `fetch-and-summarize.ts` はこれらをつなぐだけで、各モジュールの公開APIを再エクスポート
+    している（テストの import 元は `fetch-and-summarize.ts` のまま）。
+    共通部品として `cli.ts`（`parseFlags()` で `--flag value` / `--flag=value` を読み、
+    `runIfMain()` でテストからの import 時は main を動かさない — 全スクリプトが使う）,
+    `atom.ts`（このサイトの feed.xml を読む。公開前ゲートと異常検知が共用）, `sleep.ts`,
+    `date.ts`（JST固定オフセットの暦日）, `frontmatter.ts`
     （front matter の生成／分割。Astro と同じ js-yaml を使う）, `http.ts`（タイムアウト・
     リトライ・読み込みサイズ上限・charset 判定）, `rss.ts`（RSS 1.0/2.0・Atom を同じ形に
     正規化）, `article.ts`（cheerio による本文抽出）, `boilerplate.ts`（ログイン誘導や
     ボット判定ページを本文と取り違えないための判定）, `sources/twitter.ts`（x.com の
     ポスト取得）, `summary.ts`（GitHub Actions のジョブサマリ）, `abort.ts`（`AbortRun`）,
-    `markdown.ts`（壊れないMarkdownリンクの組み立て）, `xml-node.ts`, `fs.ts`, `logger.ts`。
+    `markdown.ts`（壊れないMarkdownリンクの組み立て）, `xml-node.ts`（`createXmlParser()` で
+    パーサ設定を1箇所に）, `fs.ts`（`writeFileIfAbsent()` は `wx` で書くので既存記事を
+    上書きしない）, `logger.ts`。
+    はてなのRSSの URL（`HATENA_RSS_URL`）とエントリの日付候補（`entryDatesJst()`）は
+    `rss.ts` にあり、記事生成と異常検知が同じ判定を使う。
     日次記事の見出しの読み取りは `src/lib/bookmarks.ts` を、表示用のタイトル整形は
     `src/lib/url.ts` を直接 import する（フィードや `/sites/` と同じ実装を使う）
   - `tests/`: vitest tests for the scripts (Gemini SDK と fetch はモックする)
@@ -284,8 +295,9 @@ on `:root` (`--bg` / `--fg` / `--muted` / `--line` / `--panel`, plus the `--cont
 ## Automation Architecture
 
 ### Content Generation Pipeline
-`fetch-and-summarize.ts` is a set of small module-level functions (plus a `GeminiSummarizer`
-class) wired together by `run()`, with `Bookmark` / `Digest` as the data passed between
+`fetch-and-summarize.ts` wires small module-level functions (plus a `GeminiSummarizer`
+class) together in `run()` — the stages themselves live in `scripts/lib/bookmark-feed.ts`,
+`article-fetch.ts` and `gemini.ts`, and are re-exported from the script — with `Bookmark` / `Digest` as the data passed between
 stages. `run()` takes its collaborators through an optional `deps` object (and the fetchers
 take injectable `direct` / `viaJina`) — ESM の export は差し替えられないため、テストは
 モンキーパッチではなくこの注入点を使う:

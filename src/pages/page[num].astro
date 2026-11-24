@@ -3,11 +3,11 @@
 import type { GetStaticPaths } from 'astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PostIndexSection from '../components/PostIndexSection.astro';
-import { getSortedPosts, PAGE_SIZE, pagePath, type Post } from '../lib/posts';
+import { getSortedPosts, PAGE_SIZE, pageCount, pagePath, type Post } from '../lib/posts';
 
 export const getStaticPaths: GetStaticPaths = async () => {
   const posts = await getSortedPosts();
-  const totalPages = Math.max(1, Math.ceil(posts.length / PAGE_SIZE));
+  const totalPages = pageCount(posts.length);
 
   return Array.from({ length: totalPages - 1 }, (_, i) => {
     const num = i + 2;

@@ -6,9 +6,16 @@
  * 変わっても拾えるよう、3形式とも同じ形に正規化して返す。
  */
 
-import { XMLParser } from 'fast-xml-parser';
+import {
+  jstDateOf,
+  parseCompactCivilDate,
+  parseInstant,
+  type CivilDate,
+} from './date.ts';
+import { asArray, createXmlParser, isNode, textOf, type XmlNode } from './xml-node.ts';
 
-import { asArray, isNode, textOf, type XmlNode } from './xml-node.ts';
+/** ブックマーク元のRSS。日次の記事生成と、公開中サイトの異常検知が読む */
+export const HATENA_RSS_URL = 'https://b.hatena.ne.jp/Buchi_6uclz1/rss';
 
 export interface FeedEntry {
   title: string;
@@ -21,13 +28,7 @@ export interface FeedEntry {
   published?: string;
 }
 
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '@_',
-  // <title>2026</title> のような値を数値にされると扱いづらい
-  parseTagValue: false,
-  parseAttributeValue: false,
-  trimValues: true,
+const parser = createXmlParser({
   // はてなのRSSはタイトルの日本語を `&#x30B3;` のような文字参照で返すことがある。
   // 既定では `&amp;` などの5つしか解かず、文字参照はそのまま残るため、
   // 記事の見出しやフィードに `&#x30B3;` の文字列が出てしまう
@@ -121,4 +122,27 @@ export function parseFeed(xml: string): FeedEntry[] {
   }
 
   return items.filter(isNode).map(toEntry);
+}
+
+/**
+ * エントリが持つ日付の候補（JSTの暦日）をすべて集める。読めないものは無視する。
+ *
+ * はてなのRSSは dc:date / エントリID（/user/20250620#bookmark-xxx）/ published が
+ * それぞれ食い違うことがあるため、どれか1つでも対象日と一致すれば採用する。
+ * 記事の生成（どの日の記事に載せるか）と異常検知（未公開の日があるか）が
+ * 同じ判定を使わないと、片方だけが「その日のブックマークがある」と言い出す。
+ */
+export function entryDatesJst(entry: FeedEntry): CivilDate[] {
+  const dates: CivilDate[] = [];
+
+  for (const value of [entry.dcDate, entry.published]) {
+    const instant = value ? parseInstant(value) : undefined;
+    if (instant) dates.push(jstDateOf(instant));
+  }
+
+  const compact = entry.id ? /\/(\d{8})#/.exec(entry.id)?.[1] : undefined;
+  const fromId = compact ? parseCompactCivilDate(compact) : undefined;
+  if (fromId) dates.push(fromId);
+
+  return dates;
 }

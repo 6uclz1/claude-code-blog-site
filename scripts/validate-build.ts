@@ -11,14 +11,13 @@
 
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 
-import { XMLParser } from 'fast-xml-parser';
 import { SyntaxValidator } from 'fast-xml-validator';
 
+import { parseAtomFeed } from './lib/atom.ts';
+import { parseFlags, parseNumber, runIfMain } from './lib/cli.ts';
 import { fileExists, isDirectory, listFilesRecursively } from './lib/fs.ts';
 import { describeError } from './lib/logger.ts';
-import { asArray, attrOf, isNode, textOf } from './lib/xml-node.ts';
 
 // Astro はファイルへリダイレクトしても色付けのエスケープシーケンスを出すため、
 // パターンマッチの前に取り除く
@@ -54,14 +53,6 @@ const POST_PAGE_RE = /^\d{4}\/\d{2}\/\d{2}\/[^/]+\/index\.html$/;
  */
 const BUILD_TIME_WINDOW_MS = 6 * 60 * 60 * 1000;
 
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '@_',
-  parseTagValue: false,
-  parseAttributeValue: false,
-  trimValues: true,
-});
-
 /** Astroのビルドログを検査する */
 export async function checkLog(logPath: string | undefined, errors: string[]): Promise<void> {
   if (!logPath) return;
@@ -76,6 +67,11 @@ export async function checkLog(logPath: string | undefined, errors: string[]): P
     const hits = log.match(pattern);
     if (hits) errors.push(`ビルドログ: ${message} (${hits.length}件)`);
   }
+}
+
+/** _posts にある記事のファイル名（隠しファイルを除く .md） */
+async function listPostSources(postsDir: string): Promise<string[]> {
+  return (await readdir(postsDir)).filter((name) => name.endsWith('.md') && !name.startsWith('.'));
 }
 
 /** dist に出力された記事ページ (YYYY/MM/DD/slug/index.html) の数 */
@@ -105,9 +101,7 @@ export async function checkPages(
     return;
   }
 
-  const sources = (await readdir(postsDir)).filter(
-    (name) => name.endsWith('.md') && !name.startsWith('.')
-  );
+  const sources = await listPostSources(postsDir);
   const generated = await countPostPages(distDir);
 
   // 1記事につき1ページ。少なければ記事が読み込まれずに落ちている
@@ -131,11 +125,7 @@ export async function checkPostContents(postsDir: string, errors: string[]): Pro
     return;
   }
 
-  const names = (await readdir(postsDir)).filter(
-    (name) => name.endsWith('.md') && !name.startsWith('.')
-  );
-
-  for (const name of names.sort()) {
+  for (const name of (await listPostSources(postsDir)).sort()) {
     const body = await readFile(path.join(postsDir, name), 'utf-8');
     const hits = body.match(FALLBACK_SUMMARY_RE);
     if (hits) errors.push(`${name}: 要約が生成できていない見出しがある (${hits.length}件)`);
@@ -148,6 +138,13 @@ function parsePublished(value: string): Date | undefined {
   const hasZone = /(Z|[+-]\d{2}:?\d{2})$/i.test(text);
   const parsed = new Date(hasZone ? text : `${text}Z`);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+/** URLのパス部分。絶対URLでなくても（スキーム無しでも）読めるようにする */
+function pathOf(href: string): string {
+  const afterScheme = href.split('://').pop() ?? '';
+  const slash = afterScheme.indexOf('/');
+  return slash === -1 ? '' : afterScheme.slice(slash);
 }
 
 /** 生成された feed.xml を検査する */
@@ -176,9 +173,7 @@ export async function checkFeed(
     return;
   }
 
-  const document: unknown = parser.parse(xml);
-  const feed = isNode(document) ? document['feed'] : undefined;
-  const entries = asArray(isNode(feed) ? feed['entry'] : undefined).filter(isNode);
+  const entries = parseAtomFeed(xml) ?? [];
 
   if (entries.length < minEntries) {
     errors.push(`feed.xml のentryが少なすぎる: ${entries.length}件 (最低${minEntries}件)`);
@@ -188,9 +183,7 @@ export async function checkFeed(
   const links: string[] = [];
   const publishedAt: number[] = [];
 
-  entries.forEach((entry, index) => {
-    const title = textOf(entry['title']);
-    const href = attrOf(asArray(entry['link'])[0], 'href');
+  entries.forEach(({ title, link: href, published }, index) => {
     const label = href || `entry #${index + 1}`;
 
     // フロントマターが壊れた記事はタイトルが空になる
@@ -200,15 +193,11 @@ export async function checkFeed(
       errors.push(`feed.xml: linkがないentryがある: entry #${index + 1}`);
     } else {
       links.push(href);
-      const afterScheme = href.split('://').pop() ?? '';
-      const slash = afterScheme.indexOf('/');
-      const pathPart = slash === -1 ? '' : afterScheme.slice(slash);
-      if (!POST_URL_RE.test(pathPart)) {
+      if (!POST_URL_RE.test(pathOf(href))) {
         errors.push(`feed.xml: URLの形式が想定と違う: ${href}`);
       }
     }
 
-    const published = textOf(entry['published']);
     if (!published) {
       errors.push(`feed.xml: publishedがないentryがある: ${label}`);
       return;
@@ -253,43 +242,35 @@ export interface CliArgs {
 export function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = { feed: 'dist/feed.xml', minEntries: 1, posts: '_posts' };
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const raw = argv[index]!;
-    const [flag, inline] = raw.includes('=')
-      ? [raw.slice(0, raw.indexOf('=')), raw.slice(raw.indexOf('=') + 1)]
-      : [raw, undefined];
-    const value = () => {
-      const next = inline ?? argv[++index];
-      if (next === undefined) throw new Error(`${flag} には値が必要です`);
-      return next;
-    };
-
-    switch (flag) {
-      case '--log':
-        args.log = value();
-        break;
-      case '--feed':
-        args.feed = value();
-        break;
-      case '--min-entries':
-        args.minEntries = Number(value());
-        break;
-      case '--dist':
-        args.dist = value();
-        break;
-      case '--posts':
-        args.posts = value();
-        break;
-      default:
-        throw new Error(`不明な引数: ${raw}`);
-    }
-  }
+  parseFlags(argv, {
+    '--log': (value) => {
+      args.log = value();
+    },
+    '--feed': (value) => {
+      args.feed = value();
+    },
+    '--min-entries': (value) => {
+      args.minEntries = parseNumber('--min-entries', value());
+    },
+    '--dist': (value) => {
+      args.dist = value();
+    },
+    '--posts': (value) => {
+      args.posts = value();
+    },
+  });
 
   return args;
 }
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
-  const args = parseArgs(argv);
+  let args: CliArgs;
+  try {
+    args = parseArgs(argv);
+  } catch (error) {
+    process.stderr.write(`${describeError(error)}\n`);
+    return 2;
+  }
 
   const errors: string[] = [];
   await checkLog(args.log, errors);
@@ -307,9 +288,4 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   return 0;
 }
 
-// スクリプトとして実行されたときだけ動かす（テストからの import では動かさない）
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void main().then((code) => {
-    process.exitCode = code;
-  });
-}
+runIfMain(import.meta.url, main);

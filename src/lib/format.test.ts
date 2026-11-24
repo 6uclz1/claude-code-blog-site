@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDateJa, permalinkToParam, toDescription, yearOf } from './format';
+import {
+  formatDateJa,
+  PAGE_SIZE,
+  pageCount,
+  permalinkToParam,
+  toDescription,
+  yearOf,
+} from './format';
 
 describe('permalinkToParam', () => {
   it('前後のスラッシュを落とす', () => {
@@ -49,5 +56,13 @@ describe('toDescription', () => {
 
   it('ちょうどの長さなら切らない', () => {
     expect(toDescription('あいう', 3)).toBe('あいう');
+  });
+});
+
+describe('pageCount', () => {
+  it('PAGE_SIZE 件ごとに1ページ。0件でも1ページ', () => {
+    expect(pageCount(0)).toBe(1);
+    expect(pageCount(PAGE_SIZE)).toBe(1);
+    expect(pageCount(PAGE_SIZE + 1)).toBe(2);
   });
 });
